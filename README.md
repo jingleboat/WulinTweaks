@@ -25,7 +25,7 @@
 ## 安装
 
 1. 安装 [BepInEx 6.0.0-be](https://github.com/BepInEx/BepInEx/releases)（**x64 / IL2CPP** 版）到游戏根目录，先启动一次游戏，让 BepInEx 生成 `BepInEx/interop/`
-2. 把 `WulinTweaks.dll` 放进 `BepInEx/plugins/`
+2. 从 [Releases](../../releases) 下载 `WulinTweaks.dll`，放进 `BepInEx/plugins/`
 3. 启动游戏 → 读取存档 → 按 `` ` `` 呼出面板
 
 插件自包含：**除 BepInEx 本体外不依赖任何第三方库**（不使用 UniverseLib，UI 为自建 UGUI）。
