@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-namespace WulinModKit
+namespace WulinTweaks
 {
     /// <summary>
     /// 自建 UGUI 面板。
@@ -50,7 +50,7 @@ namespace WulinModKit
             }
             catch { _font = null; }
 
-            _canvasGo = new GameObject("WulinModKitCanvas");
+            _canvasGo = new GameObject("WulinTweaksCanvas");
             UnityEngine.Object.DontDestroyOnLoad(_canvasGo);
 
             var canvas = _canvasGo.AddComponent<Canvas>();
@@ -116,7 +116,7 @@ namespace WulinModKit
             Footer("热键 " + Plugin.UiToggleKey.Value + "（配置文件可改）");
 
             if (_panel != null) _panel.SetActive(_visible);
-            Plugin.L.LogInfo("[WulinModKit] UI created (hidden). 按 " + Plugin.UiToggleKey.Value + " 呼出面板, font=" + (_font != null));
+            Plugin.L.LogInfo("[WulinTweaks] UI created (hidden). 按 " + Plugin.UiToggleKey.Value + " 呼出面板, font=" + (_font != null));
         }
 
         private static Text NewText(GameObject parent, string content, Color color, int size)

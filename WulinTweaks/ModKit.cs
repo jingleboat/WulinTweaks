@@ -7,7 +7,7 @@ using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
 using WuLin;
 
-namespace WulinModKit
+namespace WulinTweaks
 {
     /// <summary>
     /// 插件运行时逻辑。每项功能独立开关、独立 try/catch。
@@ -22,7 +22,7 @@ namespace WulinModKit
         {
             if (_errCount > 200) return;
             _errCount++;
-            Plugin.L.LogError("[WulinModKit] " + where + ": " + e.GetType().Name + ": " + e.Message);
+            Plugin.L.LogError("[WulinTweaks] " + where + ": " + e.GetType().Name + ": " + e.Message);
         }
 
         internal static bool Truthy(Il2CppObjectBase o)
@@ -30,7 +30,7 @@ namespace WulinModKit
             return o != null && o.Pointer != IntPtr.Zero;
         }
 
-        /// <summary>借用游戏自己的 LuaEnv 执行 BepInEx/config/WulinModKit/*.lua</summary>
+        /// <summary>借用游戏自己的 LuaEnv 执行 BepInEx/config/WulinTweaks/*.lua</summary>
         internal static void TryBootstrapLua()
         {
             if (LuaLoaded) return;
@@ -56,7 +56,7 @@ namespace WulinModKit
                 try
                 {
                     mgr.DoScript(File.ReadAllText(f));
-                    Plugin.L.LogInfo("[WulinModKit] lua ok: " + Path.GetFileName(f));
+                    Plugin.L.LogInfo("[WulinTweaks] lua ok: " + Path.GetFileName(f));
                 }
                 catch (Exception e) { Err("lua " + Path.GetFileName(f), e); }
             }
@@ -162,7 +162,7 @@ namespace WulinModKit
             }
 
             int miscLit = HighlightMiscItems(rm);
-            Plugin.L.LogInfo("[WulinModKit] highlight: io=" + ioLit + " misc=" + miscLit);
+            Plugin.L.LogInfo("[WulinTweaks] highlight: io=" + ioLit + " misc=" + miscLit);
         }
 
         /// <summary>地面物品：只亮 TempID &gt; 0 的（有真实物品模板 = 可拾取）</summary>
@@ -249,7 +249,7 @@ namespace WulinModKit
                 }
 
                 if (unlocked > 0)
-                    Plugin.L.LogInfo("[WulinModKit] world map unlocked +" + unlocked);
+                    Plugin.L.LogInfo("[WulinTweaks] world map unlocked +" + unlocked);
             }
             catch (Exception e) { Err("worldmap", e); }
         }
@@ -283,7 +283,7 @@ namespace WulinModKit
                 int shown = 0, total = 0;
                 WalkMapIcons(wm.CityIcon, 0, 3, ref shown, ref total);
                 if (first)
-                    Plugin.L.LogInfo("[WulinModKit] city icon shown=" + shown + "/" + total
+                    Plugin.L.LogInfo("[WulinTweaks] city icon shown=" + shown + "/" + total
                         + " (worldMapID " + wm.worldMapID + ")");
             }
             catch (Exception e) { Err("city icons", e); }
@@ -351,7 +351,7 @@ namespace WulinModKit
             catch (Exception e) { Err("cab icons", e); }
 
             if (shown > 0)
-                Plugin.L.LogInfo("[WulinModKit] cab icon shown=" + shown + "/" + total);
+                Plugin.L.LogInfo("[WulinTweaks] cab icon shown=" + shown + "/" + total);
         }
 
         private static void WalkShow(Transform t, int depth, int maxDepth, ref int shown, ref int total)
@@ -413,7 +413,7 @@ namespace WulinModKit
                 var h = GetModuleHandle("GameAssembly.dll");
                 if (h == IntPtr.Zero)
                 {
-                    Plugin.L.LogWarning("[WulinModKit] GameAssembly.dll handle not found");
+                    Plugin.L.LogWarning("[WulinTweaks] GameAssembly.dll handle not found");
                     return;
                 }
 
@@ -430,11 +430,11 @@ namespace WulinModKit
                 if (ok == TeamCondConnectNodes.Length)
                 {
                     _teamPatchDone = true;
-                    Plugin.L.LogInfo("[WulinModKit] team condition patched (skip-to-base) " + ok + "/" + TeamCondConnectNodes.Length);
+                    Plugin.L.LogInfo("[WulinTweaks] team condition patched (skip-to-base) " + ok + "/" + TeamCondConnectNodes.Length);
                 }
                 else
                 {
-                    Plugin.L.LogWarning("[WulinModKit] team condition patch " + ok + "/" + TeamCondConnectNodes.Length
+                    Plugin.L.LogWarning("[WulinTweaks] team condition patch " + ok + "/" + TeamCondConnectNodes.Length
                         + "; failed: " + failed);
                     _teamPatchDone = ok > 0;
                 }
@@ -483,7 +483,7 @@ namespace WulinModKit
                 }
                 _teamSaved.Clear();
                 _teamPatchDone = false;
-                Plugin.L.LogInfo("[WulinModKit] team condition restored");
+                Plugin.L.LogInfo("[WulinTweaks] team condition restored");
             }
             catch (Exception e) { Err("team restore", e); }
         }
@@ -510,7 +510,7 @@ namespace WulinModKit
                 catch { }
             }
 
-            Plugin.L.LogInfo("[WulinModKit] highlight cleared: " + cleared + "/" + ptrs.Count);
+            Plugin.L.LogInfo("[WulinTweaks] highlight cleared: " + cleared + "/" + ptrs.Count);
         }
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]

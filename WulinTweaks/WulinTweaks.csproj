@@ -2,8 +2,8 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <AssemblyName>WulinModKit</AssemblyName>
-    <RootNamespace>WulinModKit</RootNamespace>
+    <AssemblyName>WulinTweaks</AssemblyName>
+    <RootNamespace>WulinTweaks</RootNamespace>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -88,10 +88,6 @@
     </Reference>
     <Reference Include="GamePlugins.InspectorEnhance.Runtime">
       <HintPath>$(InteropDir)\GamePlugins.InspectorEnhance.Runtime.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="UniverseLib.BIE.IL2CPP.Interop">
-      <HintPath>$(GameDir)\BepInEx\plugins\UniverseLib.BIE.IL2CPP.Interop.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

@@ -3,7 +3,7 @@ using HarmonyLib;
 using UnityEngine;
 using WuLin;
 
-namespace WulinModKit
+namespace WulinTweaks
 {
     internal static class Hooks
     {

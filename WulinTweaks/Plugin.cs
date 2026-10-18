@@ -6,13 +6,13 @@ using BepInEx.Logging;
 using BepInEx.Unity.IL2CPP;
 using HarmonyLib;
 
-namespace WulinModKit
+namespace WulinTweaks
 {
-    [BepInPlugin(Guid, "Wulin ModKit", Version)]
+    [BepInPlugin(Guid, "Wulin Tweaks", Version)]
     public class Plugin : BasePlugin
     {
-        public const string Guid = "wulin.modkit";
-        public const string Version = "1.2.0";
+        public const string Guid = "wulin.tweaks";
+        public const string Version = "1.5.0";
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -44,7 +44,7 @@ namespace WulinModKit
             Inst = this;
             L = Log;
 
-            LuaDir = Path.Combine(Paths.ConfigPath, "WulinModKit");
+            LuaDir = Path.Combine(Paths.ConfigPath, "WulinTweaks");
             Directory.CreateDirectory(LuaDir);
 
             AlwaysHighlight = Config.Bind("1_Highlight", "AlwaysHighlight", false,
@@ -90,7 +90,7 @@ namespace WulinModKit
             SafePatch(typeof(Hooks.DamageCalc), "DefaultDamageEffect_Logic.StandardDamageCalculate");
             SafePatch(typeof(Hooks.DamageCalcSlg), "DefaultDamageEffect_Logic.SlgModeDamageCalculate");
 
-            L.LogInfo("[WulinModKit] v" + Version + " loaded. Lua dir = " + LuaDir);
+            L.LogInfo("[WulinTweaks] v" + Version + " loaded. Lua dir = " + LuaDir);
         }
 
         private void SafePatch(Type patchClass, string label)
@@ -98,11 +98,11 @@ namespace WulinModKit
             try
             {
                 H.CreateClassProcessor(patchClass).Patch();
-                L.LogInfo("[WulinModKit] patched: " + label);
+                L.LogInfo("[WulinTweaks] patched: " + label);
             }
             catch (Exception e)
             {
-                L.LogError("[WulinModKit] patch FAILED: " + label + " -> " + e.GetType().Name + ": " + e.Message);
+                L.LogError("[WulinTweaks] patch FAILED: " + label + " -> " + e.GetType().Name + ": " + e.Message);
             }
         }
     }
