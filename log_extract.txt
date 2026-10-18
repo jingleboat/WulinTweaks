@@ -1,0 +1,40 @@
+lit: shibei2_17_22 bt=1 ct=9
+lit: shibei2_23_20 bt=1 ct=9
+lit: shibei2_11_20 bt=1 ct=9
+lit: shibei2_23_16 bt=1 ct=9
+lit: shibei2_11_16 bt=1 ct=9
+highlight scan: total=30 skipped(non-interactable)=21 skipped(clickType)=4 skipped(building)=0 adapters=5 ioLit=5 misc=0 clickTypes={0=4} buildingTypes={}
+lit: taizi16_17_18 bt=1 ct=10
+lit: shibei2_17_22 bt=1 ct=9
+lit: shibei2_23_20 bt=1 ct=9
+lit: shibei2_11_20 bt=1 ct=9
+lit: shibei2_23_16 bt=1 ct=9
+lit: shibei2_11_16 bt=1 ct=9
+highlight scan: total=31 skipped(non-interactable)=21 skipped(clickType)=4 skipped(building)=0 adapters=6 ioLit=6 misc=0 clickTypes={0=4} buildingTypes={}
+ad[0] obj inter=True name=shibei2_17_22 io{bt=1,ct=9,act=True}
+ad[1] obj inter=True name=shibei2_23_20 io{bt=1,ct=9,act=True}
+ad[2] obj inter=True name=shibei2_11_20 io{bt=1,ct=9,act=True}
+ad[3] obj inter=True name=shibei2_23_16 io{bt=1,ct=9,act=True}
+ad[4] obj inter=True name=shibei2_11_16 io{bt=1,ct=9,act=True}
+ad[5] obj inter=True name=taizi16_17_18 io{bt=1,ct=10,act=True}
+lit: hushui1_78_41 bt=1 ct=3
+lit: xiangzi11_122_98 bt=1 ct=1
+lit: guanzi2_107_126 bt=1 ct=1
+skip-building: DOOR_wawu48_168_128 bt=21 kit=yes ct=1
+lit: shixiang8_on_84_75 bt=1 ct=6
+lit: muzhuang2_75_57 bt=1 ct=2
+lit: muzhuang2_71_57 bt=1 ct=2
+lit: muzhuang1_73_57 bt=1 ct=2
+lit: shuijing6_107_118 bt=1 ct=2
+highlight scan: total=583 skipped(non-interactable)=517 skipped(clickType)=57 skipped(building)=1 adapters=8 ioLit=8 misc=300 clickTypes={0=56, 5=1} buildingTypes={21=1}
+lit: hushui1_78_41 bt=1 ct=3
+lit: xiangzi11_122_98 bt=1 ct=1
+lit: guanzi2_107_126 bt=1 ct=1
+skip-building: DOOR_wawu48_168_128 bt=21 kit=yes ct=1
+lit: shixiang8_on_84_75 bt=1 ct=6
+lit: muzhuang2_75_57 bt=1 ct=2
+lit: muzhuang2_71_57 bt=1 ct=2
+lit: muzhuang1_73_57 bt=1 ct=2
+lit: shuijing6_107_118 bt=1 ct=2
+highlight scan: total=0 skipped(non-interactable)=0 skipped(clickType)=0 skipped(building)=0 adapters=0 ioLit=0 misc=0 clickTypes={} buildingTypes={}
+highlight scan: total=5 skipped(non-interactable)=5 skipped(clickType)=0 skipped(building)=0 adapters=0 ioLit=0 misc=195 clickTypes={} buildingTypes={}

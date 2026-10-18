@@ -1,0 +1,139 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Assembly-CSharp</AssemblyName>
+    <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+  </PropertyGroup>
+  <PropertyGroup>
+    <LangVersion>14.0</LangVersion>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <CheckForOverflowUnderflow>False</CheckForOverflowUnderflow>
+  </PropertyGroup>
+  <PropertyGroup />
+  <ItemGroup />
+  <ItemGroup>
+    <Reference Include="Il2Cppmscorlib">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Il2Cppmscorlib.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppInterop.Runtime" />
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Addressables">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Unity.Addressables.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Unity.TextMeshPro.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.AnimationModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.ParticleSystemModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.IMGUIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.UI.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.UIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppSystem">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Il2CppSystem.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.Physics2DModule.dll</HintPath>
+    </Reference>
+    <Reference Include="ModShare.Runtime">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\ModShare.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="com.rlabrecque.steamworks.net">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\com.rlabrecque.steamworks.net.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TilemapModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.TilemapModule.dll</HintPath>
+    </Reference>
+    <Reference Include="DOTween">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\DOTween.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppSystem.Core">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Il2CppSystem.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.TextRenderingModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.AudioModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Rewired_Core">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Rewired_Core.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.InputLegacyModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.PhysicsModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.PhysicsModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.Core.Runtime">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Unity.RenderPipelines.Core.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.RenderPipelines.Universal.Runtime">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Unity.RenderPipelines.Universal.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="LeTai.TranslucentImage">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\LeTai.TranslucentImage.dll</HintPath>
+    </Reference>
+    <Reference Include="GamePlugins.InspectorEnhance.Runtime">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\GamePlugins.InspectorEnhance.Runtime.dll</HintPath>
+    </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Assembly-CSharp-firstpass.dll</HintPath>
+    </Reference>
+    <Reference Include="XNode">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\XNode.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.UnityWebRequestModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.2D.PixelPerfect">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Unity.2D.PixelPerfect.dll</HintPath>
+    </Reference>
+    <Reference Include="FancyTextRendering">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\FancyTextRendering.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.GridModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.GridModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.VideoModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.VideoModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AIModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.AIModule.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.TerrainModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.TerrainModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Pathfinding.Ionic.Zip.Reduced">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Pathfinding.Ionic.Zip.Reduced.dll</HintPath>
+    </Reference>
+    <Reference Include="Pathfinding.Poly2Tri">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Pathfinding.Poly2Tri.dll</HintPath>
+    </Reference>
+    <Reference Include="Pathfinding.ClipperLib">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Pathfinding.ClipperLib.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.ResourceManager">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\Unity.ResourceManager.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.UnityWebRequestTextureModule">
+      <HintPath>F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\interop\UnityEngine.UnityWebRequestTextureModule.dll</HintPath>
+    </Reference>
+    <Reference Include="Il2CppInterop.Common" />
+  </ItemGroup>
+</Project>
