@@ -14,7 +14,7 @@ namespace WulinModKit
     internal static class ModUi
     {
         private static bool _created;
-        private static bool _visible = true;
+        private static bool _visible = false;
         private static GameObject _canvasGo;
         private static GameObject _panel;
         private static Font _font;
@@ -115,7 +115,8 @@ namespace WulinModKit
 
             Footer("热键 " + Plugin.UiToggleKey.Value + "（配置文件可改）");
 
-            Plugin.L.LogInfo("[WulinModKit] UI created (self canvas), font=" + (_font != null));
+            if (_panel != null) _panel.SetActive(_visible);
+            Plugin.L.LogInfo("[WulinModKit] UI created (hidden). 按 " + Plugin.UiToggleKey.Value + " 呼出面板, font=" + (_font != null));
         }
 
         private static Text NewText(GameObject parent, string content, Color color, int size)

@@ -47,19 +47,19 @@ namespace WulinModKit
             LuaDir = Path.Combine(Paths.ConfigPath, "WulinModKit");
             Directory.CreateDirectory(LuaDir);
 
-            AlwaysHighlight = Config.Bind("1_Highlight", "AlwaysHighlight", true,
+            AlwaysHighlight = Config.Bind("1_Highlight", "AlwaysHighlight", false,
                 "进图时点亮场景里可交互的物件，并保持描边不再熄灭");
             ExcludeBuildings = Config.Bind("1_Highlight", "ExcludeBuildings", true,
                 "跳过建筑本体（城门/建筑/密道/桥），避免整栋楼被描边");
-            MiscRequirePickable = Config.Bind("1_Highlight", "MiscRequirePickable", true,
+            MiscRequirePickable = Config.Bind("1_Highlight", "MiscRequirePickable", false,
                 "地面物品只亮可拾取的（TempID > 0，即对应真实物品模板）");
 
-            UnlockWorldMap = Config.Bind("2_WorldMap", "UnlockAll", true,
+            UnlockWorldMap = Config.Bind("2_WorldMap", "UnlockAll", false,
                 "大地图地区与地点全解锁");
-            UnlockCabMap = Config.Bind("2_WorldMap", "UnlockCabMap", true,
+            UnlockCabMap = Config.Bind("2_WorldMap", "UnlockCabMap", false,
                 "马车地图所有地点解锁、图标全部可见");
 
-            IgnoreTeamCondition = Config.Bind("3_Story", "IgnoreTeamMemberCondition", true,
+            IgnoreTeamCondition = Config.Bind("3_Story", "IgnoreTeamMemberCondition", false,
                 "剧情触发时忽略「队伍中是否存在某角色」条件");
 
             PlayerDamageMul = Config.Bind("4_Damage", "PlayerMultiplier", 1.0f,
