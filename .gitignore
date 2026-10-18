@@ -4,5 +4,6 @@ obj/
 full/
 decomp/
 *.png
+!docs/*.png
 types.txt
 log_extract.txt

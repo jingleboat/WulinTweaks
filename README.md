@@ -1,8 +1,11 @@
 # WulinTweaks
 
-**《武林志》微调套件** — 场景高亮 / 大地图解锁 / 剧情条件放宽 / 伤害倍率
+**《大侠立志传》（Hero's Adventure: Road to Passion）微调套件**
+场景高亮 / 大地图解锁 / 剧情条件放宽 / 伤害倍率
 
 基于 BepInEx 6（IL2CPP）的 Harmony 插件。运行时按 `` ` `` 呼出面板，所有功能**默认关闭**、按需开启、可随时开关撤销。
+
+![面板与场景高亮](docs/screenshot.png)
 
 ---
 
@@ -68,7 +71,7 @@
 
 ## 兼容性
 
-- 面向 PC（Steam）版，Unity 2020.3.13f1c1
+- 面向 **《大侠立志传》Hero's Adventure: Road to Passion** PC（Steam）版，Unity 2020.3.13f1c1
 - 与 `HaxxToyBox` 共存无冲突（各自独立的 Harmony patch 与配置文件）
 - 移动版结构不同（arm64、`libil2cpp.so`），RVA 不通用，未支持
 
