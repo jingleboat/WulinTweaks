@@ -7,7 +7,7 @@ namespace WulinModKit
 {
     internal static class Hooks
     {
-        // ============ ① 场景互动物体常亮 ============
+        // ============ ① 场景高亮 ============
 
         /// <summary>InteractiveObject.SetOutLine(bool) —— 拦截"关灯"</summary>
         [HarmonyPatch]
@@ -23,7 +23,7 @@ namespace WulinModKit
             }
         }
 
-        /// <summary>InteractiveObject.SetOutLine(Transform, bool) —— 内部真正做事的那层</summary>
+        /// <summary>InteractiveObject.SetOutLine(Transform, bool)</summary>
         [HarmonyPatch]
         internal static class InteractiveOutLine2
         {
@@ -37,11 +37,7 @@ namespace WulinModKit
             }
         }
 
-        /// <summary>
-        /// ViewElemenetAdapator.SetOutLine —— 游戏每帧按悬停状态调这个函数。
-        /// 重写它恒为 true 就等于"碰过即永久亮"；
-        /// 扫描模式下再加白名单，避免 NPC / 建筑被永久描边。
-        /// </summary>
+        /// <summary>ViewElemenetAdapator.SetOutLine —— 白名单里的适配器一律锁亮（NPC 不受影响）</summary>
         [HarmonyPatch(typeof(ViewElemenetAdapator), "SetOutLine")]
         internal static class ViewAdapterOutLine
         {
@@ -50,24 +46,6 @@ namespace WulinModKit
                 try
                 {
                     if (!Plugin.AlwaysHighlight.Value) return;
-
-                    // 暴力模式：除人物外，一切视图元素（物件/建筑/地形）永久描边
-                    if (Plugin.ForceAllAdapters.Value)
-                    {
-                        if (ModKit.IsActorAdapter(__instance)) return;
-                        isActive = true;
-                        return;
-                    }
-
-                    if (!Plugin.ScanOnEntry.Value)
-                    {
-                        // 纯拦截模式：不主动扫描，凡游戏判定为"可交互"的视图元素一律锁亮
-                        if (!__instance.isInteractiveable) return;
-                        isActive = true;
-                        return;
-                    }
-
-                    // 扫描模式：只锁亮白名单里的（避免 NPC / 建筑被永久描边）
                     if (!ModKit.IsHighlightAdapter(__instance.Pointer)) return;
                     isActive = true;
                 }
@@ -75,28 +53,25 @@ namespace WulinModKit
             }
         }
 
-        /// <summary>自由模式每帧：Lua 引导 + 每 3 秒补扫地面物品</summary>
+        /// <summary>自由模式每帧：第一帧引导 Lua</summary>
         [HarmonyPatch(typeof(RoamingManager), "Update")]
         internal static class RoamingUpdate
         {
-            private static int _frame;
+            private static bool _booted;
 
             static void Postfix()
             {
                 try
                 {
-                    if (++_frame == 1) ModKit.TryBootstrapLua();
-                    if ((_frame % 30) == 0)
-                    {
-                        ModKit.AdapterDumpTick();
-                        ModKit.MiscItemsTick();
-                    }
+                    if (_booted) return;
+                    _booted = true;
+                    ModKit.TryBootstrapLua();
                 }
                 catch (Exception e) { ModKit.Err("hook roamingUpdate", e); }
             }
         }
 
-        /// <summary>进图完成：立刻全场景点亮，不等鼠标经过</summary>
+        /// <summary>进图完成：全场景扫一次点亮</summary>
         [HarmonyPatch(typeof(MapManager), "OnLoadMapComplated")]
         internal static class MapLoaded
         {
@@ -105,27 +80,27 @@ namespace WulinModKit
                 try
                 {
                     ModKit.TryBootstrapLua();
-                    ModKit.ResetAdapterDump();
-                    ModKit.ForceHighlightTick(true);
-                    ModKit.UnlockWorldMapTick(true);
+                    ModKit.ForceHighlightNow();
+                    ModKit.UnlockWorldMapTick();
                 }
                 catch (Exception e) { ModKit.Err("hook mapLoaded", e); }
             }
         }
 
-        /// <summary>新地图实体创建完成（切图/子地图）：再补一次</summary>
+        /// <summary>地图实体创建完成（切图/子地图）：再补一次</summary>
         [HarmonyPatch(typeof(MapManager), "OnCreateMapEntityComplated")]
         internal static class MapEntityCreated
         {
             static void Postfix()
             {
-                try { ModKit.ForceHighlightTick(true); }
+                try { ModKit.ForceHighlightNow(); }
                 catch (Exception e) { ModKit.Err("hook mapEntityCreated", e); }
             }
         }
 
         // ============ ② 大地图解锁 ============
 
+        /// <summary>UIWorldMapManager.Update —— 打开大地图期间按 2 秒节流刷新</summary>
         [HarmonyPatch(typeof(UIWorldMapManager), "Update")]
         internal static class WorldMapUpdate
         {
@@ -134,13 +109,13 @@ namespace WulinModKit
                 try
                 {
                     ModKit.TryBootstrapLua();
-                    ModKit.UnlockWorldMapTick(false);
+                    ModKit.UnlockWorldMapTick();
                 }
                 catch (Exception e) { ModKit.Err("hook worldmapUpdate", e); }
             }
         }
 
-        /// <summary>UIWorldMapManager.IsMapEnable —— 世界地图"是否已解锁"的唯一判定口，恒 true</summary>
+        /// <summary>IsMapEnable —— 世界地图"是否已解锁"判定恒 true</summary>
         [HarmonyPatch]
         internal static class MapEnableCheck
         {
@@ -154,14 +129,14 @@ namespace WulinModKit
             }
         }
 
-        /// <summary>UIWorldMap.SetCityVisible —— 大地图上城市图标显隐，强制显示</summary>
+        /// <summary>SetCityVisible —— 城市图标显隐强制打开</summary>
         [HarmonyPatch]
         internal static class CityVisible
         {
             static System.Reflection.MethodBase TargetMethod()
                 => AccessTools.Method(typeof(UIWorldMap), "SetCityVisible", new[] { typeof(int), typeof(bool) });
 
-            static void Prefix(int mapID, ref bool isShow)
+            static void Prefix(ref bool isShow)
             {
                 try
                 {
@@ -172,24 +147,20 @@ namespace WulinModKit
             }
         }
 
-        /// <summary>每次打开大地图：重刷图标显隐 + 强制全显示</summary>
+        /// <summary>每次打开大地图：重刷图标</summary>
         [HarmonyPatch(typeof(UIWorldMap), "OnShow")]
         internal static class WorldMapOnShow
         {
             static void Postfix(UIWorldMap __instance)
             {
-                try
-                {
-                    if (!Plugin.UnlockWorldMap.Value) return;
-                    ModKit.ForceCityIconsNow(__instance);
-                }
+                try { ModKit.ForceCityIconsNow(__instance); }
                 catch (Exception e) { ModKit.Err("hook worldMapOnShow", e); }
             }
         }
 
-        // ============ ②b 马车地图解锁 ============
+        // ============ ②b 马车地图 ============
 
-        /// <summary>UICabMapManager.IsPassIcon —— 该地点是否"已去过"，恒 true</summary>
+        /// <summary>IsPassIcon —— 地点"是否已去过"恒 true</summary>
         [HarmonyPatch]
         internal static class CabIsPassIcon
         {
@@ -203,22 +174,16 @@ namespace WulinModKit
             }
         }
 
-        /// <summary>马车地图重刷图标显隐之后：再强制全显示一遍</summary>
         [HarmonyPatch(typeof(UICabMapManager), "UpdateIconShow")]
         internal static class CabUpdateIconShow
         {
             static void Postfix(UICabMapManager __instance)
             {
-                try
-                {
-                    if (!Plugin.UnlockCabMap.Value) return;
-                    ModKit.ForceCabIconsNow(__instance);
-                }
+                try { ModKit.ForceCabIconsNow(__instance); }
                 catch (Exception e) { ModKit.Err("hook cabUpdateIconShow", e); }
             }
         }
 
-        /// <summary>打开马车地图</summary>
         [HarmonyPatch]
         internal static class CabShow
         {
@@ -227,11 +192,7 @@ namespace WulinModKit
 
             static void Postfix(UICabMapManager __instance)
             {
-                try
-                {
-                    if (!Plugin.UnlockCabMap.Value) return;
-                    ModKit.ForceCabIconsNow(__instance);
-                }
+                try { ModKit.ForceCabIconsNow(__instance); }
                 catch (Exception e) { ModKit.Err("hook cabShow", e); }
             }
         }
@@ -257,29 +218,6 @@ namespace WulinModKit
             {
                 try { ModKit.ApplyDamageMul(ref __result, dealerActor); }
                 catch (Exception e) { ModKit.Err("hook damageSlg", e); }
-            }
-        }
-
-        // ============ ③ 剧情条件 ============
-
-        /// <summary>
-        /// 先把条件检查的调用链摸清楚：不改逻辑，只记录。
-        /// 确认命中点后再改成放行。
-        /// </summary>
-        [HarmonyPatch(typeof(PlayerTeamManager), "HasCharacterAsMember")]
-        internal static class TeamMemberCheck
-        {
-            static void Postfix(bool __result, GameCharacterInstance gameCharacterInstance, bool includePet)
-            {
-                if (!__result && Plugin.TeamConditionDebug.Value)
-                {
-                    try
-                    {
-                        Plugin.L.LogInfo("[WulinModKit] HasCharacterAsMember(false) includePet=" + includePet
-                            + " caller=" + new System.Diagnostics.StackTrace(1, false).GetFrame(0)?.GetMethod()?.Name);
-                    }
-                    catch { }
-                }
             }
         }
     }
