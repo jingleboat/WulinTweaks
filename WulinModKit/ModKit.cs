@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
 using WuLin;
@@ -374,6 +375,46 @@ namespace WulinModKit
 
                 WalkShow(c, depth + 1, maxDepth, ref shown, ref total);
             }
+        }
+
+        // ---------- ③ 剧情：忽略「队伍中是否有某角色」条件 ----------
+        //
+        // 反汇编 IsJoinedTeamCondition.CheckExtra / CheckAllConnectNode 得到：
+        //     var del = IsJoinedTeamCondition.CheckExtraAction;
+        //     if (del != null) return del(this, extra);
+        //     return true;                                  ← 委托为空时恒成立
+        // 所以把两个静态委托置空，条件就永远满足（不依赖 interop 是否导出该类型）。
+        private static bool _teamCondResolved;
+        private static IntPtr _fCheckExtra;
+        private static IntPtr _fCheckConnect;
+
+        internal static void ForceIgnoreTeamCondition()
+        {
+            if (!Plugin.IgnoreTeamCondition.Value) return;
+
+            try
+            {
+                if (!_teamCondResolved)
+                {
+                    var klass = IL2CPP.GetIl2CppClass("Assembly-CSharp.dll", "", "IsJoinedTeamCondition");
+                    if (klass == IntPtr.Zero) return;
+
+                    _fCheckExtra = IL2CPP.il2cpp_class_get_field_from_name(klass, "CheckExtraAction");
+                    _fCheckConnect = IL2CPP.il2cpp_class_get_field_from_name(klass, "CheckAllConnectNodeAction");
+                    _teamCondResolved = true;
+
+                    Plugin.L.LogInfo("[WulinModKit] team condition hooks: CheckExtra=" + _fCheckExtra
+                        + " CheckAllConnect=" + _fCheckConnect);
+                }
+
+                unsafe
+                {
+                    IntPtr zero = IntPtr.Zero;
+                    if (_fCheckExtra != IntPtr.Zero) IL2CPP.il2cpp_field_static_set_value(_fCheckExtra, &zero);
+                    if (_fCheckConnect != IntPtr.Zero) IL2CPP.il2cpp_field_static_set_value(_fCheckConnect, &zero);
+                }
+            }
+            catch (Exception e) { Err("team condition", e); }
         }
 
         // ---------- ④ 伤害 ----------

@@ -53,19 +53,25 @@ namespace WulinModKit
             }
         }
 
-        /// <summary>自由模式每帧：第一帧引导 Lua</summary>
+        /// <summary>自由模式每帧：第一帧引导 Lua；每 60 帧兜底重置队伍条件委托</summary>
         [HarmonyPatch(typeof(RoamingManager), "Update")]
         internal static class RoamingUpdate
         {
             private static bool _booted;
+            private static int _frame;
 
             static void Postfix()
             {
                 try
                 {
-                    if (_booted) return;
-                    _booted = true;
-                    ModKit.TryBootstrapLua();
+                    if (!_booted)
+                    {
+                        _booted = true;
+                        ModKit.TryBootstrapLua();
+                        ModKit.ForceIgnoreTeamCondition();
+                    }
+
+                    if ((++_frame % 60) == 0) ModKit.ForceIgnoreTeamCondition();
                 }
                 catch (Exception e) { ModKit.Err("hook roamingUpdate", e); }
             }
@@ -80,6 +86,7 @@ namespace WulinModKit
                 try
                 {
                     ModKit.TryBootstrapLua();
+                    ModKit.ForceIgnoreTeamCondition();
                     ModKit.ForceHighlightNow();
                     ModKit.UnlockWorldMapTick();
                 }
