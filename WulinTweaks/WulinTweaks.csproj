@@ -50,6 +50,10 @@
       <HintPath>$(InteropDir)\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="ModShare.Runtime">
+      <HintPath>$(InteropDir)\ModShare.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2Cppmscorlib">
       <HintPath>$(InteropDir)\Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>

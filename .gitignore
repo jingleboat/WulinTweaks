@@ -7,3 +7,6 @@ decomp/
 !docs/*.png
 types.txt
 log_extract.txt
+DlcProbe/
+tools/rva_map.txt
+tools/autodeploy.log

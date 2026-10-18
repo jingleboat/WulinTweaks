@@ -206,27 +206,72 @@ namespace WulinTweaks
             }
         }
 
-        // ============ ④ 伤害倍率 ============
+        // ============ ④ 易物 ============
 
-        [HarmonyPatch(typeof(KungfuAtomicEffectExt.DefaultDamageEffect_Logic),
-                      nameof(KungfuAtomicEffectExt.DefaultDamageEffect_Logic.StandardDamageCalculate))]
-        internal static class DamageCalc
+        /// <summary>ValueOffset() —— ConfirmTrading 的第一道门槛（&lt; 0 直接放弃）</summary>
+        [HarmonyPatch]
+        internal static class TradeValueOffset
         {
-            static void Postfix(ref float __result, BattleActor dealerActor)
+            static System.Reflection.MethodBase TargetMethod()
+                => AccessTools.Method(typeof(TradingWithNpcManager), "ValueOffset");
+
+            static void Postfix(ref long __result)
             {
-                try { ModKit.ApplyDamageMul(ref __result, dealerActor); }
-                catch (Exception e) { ModKit.Err("hook damage", e); }
+                try { TradeKit.ForceValueOffset(ref __result); }
+                catch (Exception e) { ModKit.Err("hook trade offset", e); }
             }
         }
 
-        [HarmonyPatch(typeof(KungfuAtomicEffectExt.DefaultDamageEffect_Logic),
-                      nameof(KungfuAtomicEffectExt.DefaultDamageEffect_Logic.SlgModeDamageCalculate))]
-        internal static class DamageCalcSlg
+        /// <summary>GameItemPack.GetTotalValue —— ConfirmTrading 的第二道门槛（玩家交易区总价必须 &gt; 0）</summary>
+        [HarmonyPatch]
+        internal static class TradePackTotalValue
         {
-            static void Postfix(ref float __result, BattleActor dealerActor)
+            static System.Reflection.MethodBase TargetMethod()
+                => AccessTools.Method(typeof(GameItemPack), "GetTotalValue", new[] { typeof(float) });
+
+            static void Postfix(GameItemPack __instance, ref long __result)
             {
-                try { ModKit.ApplyDamageMul(ref __result, dealerActor); }
-                catch (Exception e) { ModKit.Err("hook damageSlg", e); }
+                try { TradeKit.ForceTradingZoneValue(__instance, ref __result); }
+                catch (Exception e) { ModKit.Err("hook trade value", e); }
+            }
+        }
+
+        /// <summary>StartTrading —— 并入击杀必掉物 / 暗取池，可选地自动摆进交易区</summary>
+        [HarmonyPatch(typeof(TradingWithNpcManager), "StartTrading")]
+        internal static class TradeStart
+        {
+            static void Prefix()
+            {
+                try { TradeKit.BeforeTradingStart(); }
+                catch (Exception e) { ModKit.Err("hook trade prestart", e); }
+            }
+
+            static void Postfix()
+            {
+                try { TradeKit.OnTradingStarted(); }
+                catch (Exception e) { ModKit.Err("hook trade start", e); }
+            }
+        }
+
+        /// <summary>ConfirmTrading —— 成交后把交易区残留 + NPC 背包剩余一并搬进队伍背包</summary>
+        [HarmonyPatch(typeof(TradingWithNpcManager), "ConfirmTrading")]
+        internal static class TradeConfirm
+        {
+            static void Postfix()
+            {
+                try { TradeKit.AfterConfirm(); }
+                catch (Exception e) { ModKit.Err("hook trade confirm", e); }
+            }
+        }
+
+        /// <summary>CancelTrading —— 取消后把为显示而复制的池子副本删掉</summary>
+        [HarmonyPatch(typeof(TradingWithNpcManager), "CancelTrading")]
+        internal static class TradeCancel
+        {
+            static void Postfix()
+            {
+                try { TradeKit.CleanupCopies(); }
+                catch (Exception e) { ModKit.Err("hook trade cancel", e); }
             }
         }
     }

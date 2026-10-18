@@ -12,16 +12,15 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.5.0";
+        public const string Version = "1.9.0";
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
         internal static Harmony H;
 
-        // ① 场景高亮
+        // ① 场景高亮（地面物品恒按「可拾取」过滤，不做开关）
         internal static ConfigEntry<bool> AlwaysHighlight;
         internal static ConfigEntry<bool> ExcludeBuildings;
-        internal static ConfigEntry<bool> MiscRequirePickable;
 
         // ② 大地图 / 马车地图
         internal static ConfigEntry<bool> UnlockWorldMap;
@@ -30,29 +29,29 @@ namespace WulinTweaks
         // ③ 剧情
         internal static ConfigEntry<bool> IgnoreTeamCondition;
 
-        // ④ 伤害
-        internal static ConfigEntry<float> PlayerDamageMul;
-        internal static ConfigEntry<float> EnemyDamageMul;
+        // ④ 易物
+        // 全部默认关闭；面板上改动会立即写进 cfg，下次启动沿用上次状态
+        internal static ConfigEntry<bool> TradeAlwaysWin;
+        internal static ConfigEntry<bool> TradePools;
+        internal static ConfigEntry<bool> TradeTakeAll;
 
         // UI
         internal static ConfigEntry<string> UiToggleKey;
 
-        internal static string LuaDir;
+        internal static string DataDir;
 
         public override void Load()
         {
             Inst = this;
             L = Log;
 
-            LuaDir = Path.Combine(Paths.ConfigPath, "WulinTweaks");
-            Directory.CreateDirectory(LuaDir);
+            DataDir = Path.Combine(Paths.ConfigPath, "WulinTweaks");
+            Directory.CreateDirectory(DataDir);
 
             AlwaysHighlight = Config.Bind("1_Highlight", "AlwaysHighlight", false,
-                "进图时点亮场景里可交互的物件，并保持描边不再熄灭");
+                "进图时点亮场景里可交互的物件，并保持描边不再熄灭（地面物品只亮可拾取的）");
             ExcludeBuildings = Config.Bind("1_Highlight", "ExcludeBuildings", true,
                 "跳过建筑本体（城门/建筑/密道/桥），避免整栋楼被描边");
-            MiscRequirePickable = Config.Bind("1_Highlight", "MiscRequirePickable", false,
-                "地面物品只亮可拾取的（TempID > 0，即对应真实物品模板）");
 
             UnlockWorldMap = Config.Bind("2_WorldMap", "UnlockAll", false,
                 "大地图地区与地点全解锁");
@@ -62,10 +61,16 @@ namespace WulinTweaks
             IgnoreTeamCondition = Config.Bind("3_Story", "IgnoreTeamMemberCondition", false,
                 "剧情触发时忽略「队伍中是否存在某角色」条件");
 
-            PlayerDamageMul = Config.Bind("4_Damage", "PlayerMultiplier", 1.0f,
-                "玩家方造成的伤害倍率（1 = 原版）");
-            EnemyDamageMul = Config.Bind("4_Damage", "EnemyMultiplier", 1.0f,
-                "敌方造成的伤害倍率（1 = 原版）");
+            TradeAlwaysWin = Config.Bind("4_Trade", "AlwaysWin", false,
+                "易物时玩家方作价永远 >= NPC 方，NPC 一律接受；"
+                + "同时让玩家交易区为空也能确认成交");
+            TradePools = Config.Bind("4_Trade", "Pools", false,
+                "易物 NPC 侧同时列出「击杀必掉物」与「暗取池」的内容。"
+                + "只往 NPC 背包放一份仅供显示的副本，两个池子本身一个字节都不动 —— "
+                + "不会改变暗取能偷到什么，也不会改变打死掉什么");
+            TradeTakeAll = Config.Bind("4_Trade", "TakeAllOnConfirm", false,
+                "点确认成交后，把交易区残留和 NPC 背包剩下的东西一起塞进队伍背包 —— "
+                + "NPC 的东西全拿走，玩家不用付出任何东西");
 
             UiToggleKey = Config.Bind("0_UI", "ToggleKey", "BackQuote",
                 "打开/关闭面板的热键（Unity KeyCode 名称：BackQuote=` / F9 / Insert / Home …）");
@@ -87,10 +92,13 @@ namespace WulinTweaks
             SafePatch(typeof(Hooks.CabUpdateIconShow), "UICabMapManager.UpdateIconShow");
             SafePatch(typeof(Hooks.CabShow), "UICabMapManager.Show(int)");
 
-            SafePatch(typeof(Hooks.DamageCalc), "DefaultDamageEffect_Logic.StandardDamageCalculate");
-            SafePatch(typeof(Hooks.DamageCalcSlg), "DefaultDamageEffect_Logic.SlgModeDamageCalculate");
+            SafePatch(typeof(Hooks.TradeValueOffset), "TradingWithNpcManager.ValueOffset");
+            SafePatch(typeof(Hooks.TradePackTotalValue), "GameItemPack.GetTotalValue");
+            SafePatch(typeof(Hooks.TradeStart), "TradingWithNpcManager.StartTrading");
+            SafePatch(typeof(Hooks.TradeConfirm), "TradingWithNpcManager.ConfirmTrading");
+            SafePatch(typeof(Hooks.TradeCancel), "TradingWithNpcManager.CancelTrading");
 
-            L.LogInfo("[WulinTweaks] v" + Version + " loaded. Lua dir = " + LuaDir);
+            L.LogInfo("[WulinTweaks] v" + Version + " loaded. data dir = " + DataDir);
         }
 
         private void SafePatch(Type patchClass, string label)

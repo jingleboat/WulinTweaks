@@ -44,7 +44,7 @@ namespace WulinTweaks
             string[] files;
             try
             {
-                files = Directory.GetFiles(Plugin.LuaDir, "*.lua", SearchOption.TopDirectoryOnly);
+                files = Directory.GetFiles(Plugin.DataDir, "*.lua", SearchOption.TopDirectoryOnly);
                 Array.Sort(files, StringComparer.OrdinalIgnoreCase);
             }
             catch (Exception e) { Err("lua list", e); return; }
@@ -179,14 +179,12 @@ namespace WulinTweaks
                 var mi = arr[i];
                 if (!Truthy(mi)) continue;
 
-                if (Plugin.MiscRequirePickable.Value)
+                // 只亮可拾取的（TempID > 0 才对应真实物品模板）—— 恒开，不做开关
+                try
                 {
-                    try
-                    {
-                        if (mi.TempID <= 0) continue;
-                    }
-                    catch (Exception e) { Err("misc tempId", e); continue; }
+                    if (mi.TempID <= 0) continue;
                 }
+                catch (Exception e) { Err("misc tempId", e); continue; }
 
                 ViewElemenetAdapator ad = null;
                 if (rm != null)
@@ -518,32 +516,5 @@ namespace WulinTweaks
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
         private static extern bool VirtualProtect(IntPtr lpAddress, UIntPtr dwSize, uint flNewProtect, out uint lpflOldProtect);
-
-        // ---------- ④ 伤害 ----------
-        internal static bool IsPlayerSide(BattleActor actor)
-        {
-            if (!Truthy(actor)) return false;
-            try
-            {
-                var team = actor.battleTeam;
-                return team == BattleTeamEnum.Player || team == BattleTeamEnum.Allie;
-            }
-            catch (Exception e) { Err("IsPlayerSide", e); }
-            return false;
-        }
-
-        internal static void ApplyDamageMul(ref float result, BattleActor dealer)
-        {
-            try
-            {
-                float pm = Plugin.PlayerDamageMul.Value;
-                float em = Plugin.EnemyDamageMul.Value;
-                if (Mathf.Approximately(pm, 1f) && Mathf.Approximately(em, 1f)) return;
-
-                float mul = IsPlayerSide(dealer) ? pm : em;
-                if (!Mathf.Approximately(mul, 1f)) result *= mul;
-            }
-            catch (Exception e) { Err("damageMul", e); }
-        }
     }
 }
