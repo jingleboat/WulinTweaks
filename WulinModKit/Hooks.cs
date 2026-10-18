@@ -71,7 +71,9 @@ namespace WulinModKit
                         ModKit.ForceIgnoreTeamCondition();
                     }
 
-                    if ((++_frame % 60) == 0) ModKit.ForceIgnoreTeamCondition();
+                    if (_frame++ < 6000) ModUi.TryCreate();
+                    ModUi.UpdateTick();
+                    if ((_frame % 60) == 0) ModKit.ForceIgnoreTeamCondition();
                 }
                 catch (Exception e) { ModKit.Err("hook roamingUpdate", e); }
             }

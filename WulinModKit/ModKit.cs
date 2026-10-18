@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes;
 using UnityEngine;
@@ -384,38 +385,139 @@ namespace WulinModKit
         //     if (del != null) return del(this, extra);
         //     return true;                                  ← 委托为空时恒成立
         // 所以把两个静态委托置空，条件就永远满足（不依赖 interop 是否导出该类型）。
-        private static bool _teamCondResolved;
-        private static IntPtr _fCheckExtra;
-        private static IntPtr _fCheckConnect;
+        private static bool _teamPatchDone;
+
+        /// <summary>函数入口前 5 字节：mov [rsp+8], rbx（一条完整指令，可整条覆盖）</summary>
+        private static readonly byte[] SigHead5 = { 0x48, 0x89, 0x5C, 0x24, 0x08 };
+
+        /// <summary>
+        /// ConditionNode.CheckAllConnectNode 的基类实现（VA 0x181105A00）。
+        /// 子类会把"角色是否在队"的委托判断放在自己重写的实现里，通过后才尾调用基类。
+        /// 直接把子类入口改成 jmp 基类 = 跳过角色判断，但保留连接节点的其余条件检查。
+        /// </summary>
+        private const int BaseCheckAllConnectNodeRva = 0x1105A00;
+
+        private static readonly (string Name, int Rva)[] TeamCondConnectNodes =
+        {
+            ("IsJoinedTeamCondition.CheckAllConnectNode", 0x10F4CB0),
+            ("HavePartnerCondition.CheckAllConnectNode",  0x10F2230),
+        };
 
         internal static void ForceIgnoreTeamCondition()
         {
             if (!Plugin.IgnoreTeamCondition.Value) return;
+            if (_teamPatchDone) return;
 
             try
             {
-                if (!_teamCondResolved)
+                var h = GetModuleHandle("GameAssembly.dll");
+                if (h == IntPtr.Zero)
                 {
-                    var klass = IL2CPP.GetIl2CppClass("Assembly-CSharp.dll", "", "IsJoinedTeamCondition");
-                    if (klass == IntPtr.Zero) return;
-
-                    _fCheckExtra = IL2CPP.il2cpp_class_get_field_from_name(klass, "CheckExtraAction");
-                    _fCheckConnect = IL2CPP.il2cpp_class_get_field_from_name(klass, "CheckAllConnectNodeAction");
-                    _teamCondResolved = true;
-
-                    Plugin.L.LogInfo("[WulinModKit] team condition hooks: CheckExtra=" + _fCheckExtra
-                        + " CheckAllConnect=" + _fCheckConnect);
+                    Plugin.L.LogWarning("[WulinModKit] GameAssembly.dll handle not found");
+                    return;
                 }
 
-                unsafe
+                var baseImpl = h + BaseCheckAllConnectNodeRva;
+
+                int ok = 0;
+                var failed = "";
+                foreach (var t in TeamCondConnectNodes)
                 {
-                    IntPtr zero = IntPtr.Zero;
-                    if (_fCheckExtra != IntPtr.Zero) IL2CPP.il2cpp_field_static_set_value(_fCheckExtra, &zero);
-                    if (_fCheckConnect != IntPtr.Zero) IL2CPP.il2cpp_field_static_set_value(_fCheckConnect, &zero);
+                    if (PatchJumpTo(h, t.Rva, baseImpl)) ok++;
+                    else failed += (failed.Length == 0 ? "" : ", ") + t.Name;
+                }
+
+                if (ok == TeamCondConnectNodes.Length)
+                {
+                    _teamPatchDone = true;
+                    Plugin.L.LogInfo("[WulinModKit] team condition patched (skip-to-base) " + ok + "/" + TeamCondConnectNodes.Length);
+                }
+                else
+                {
+                    Plugin.L.LogWarning("[WulinModKit] team condition patch " + ok + "/" + TeamCondConnectNodes.Length
+                        + "; failed: " + failed);
+                    _teamPatchDone = ok > 0;
                 }
             }
             catch (Exception e) { Err("team condition", e); }
         }
+
+        private static readonly List<(IntPtr Addr, byte[] Orig)> _teamSaved = new List<(IntPtr, byte[])>();
+
+        /// <summary>校验入口 5 字节后写入 E9 相对跳转，并保留原始字节以便撤销</summary>
+        private static bool PatchJumpTo(IntPtr moduleBase, int rva, IntPtr target)
+        {
+            var orig = moduleBase + rva;
+
+            var head = new byte[5];
+            Marshal.Copy(orig, head, 0, 5);
+            for (int i = 0; i < 5; i++)
+                if (head[i] != SigHead5[i]) return false;
+
+            long rel = (long)target - ((long)orig + 5);
+            if (rel < int.MinValue || rel > int.MaxValue) return false;
+
+            uint old;
+            if (!VirtualProtect(orig, (UIntPtr)5, 0x40, out old)) return false;
+
+            Marshal.WriteByte(orig, 0xE9);
+            Marshal.WriteInt32(orig + 1, (int)rel);
+
+            VirtualProtect(orig, (UIntPtr)5, old, out _);
+
+            _teamSaved.Add((orig, head));
+            return true;
+        }
+
+        /// <summary>撤销队伍条件 patch，写回原始字节</summary>
+        internal static void RestoreTeamCondition()
+        {
+            try
+            {
+                foreach (var s in _teamSaved)
+                {
+                    uint old;
+                    if (!VirtualProtect(s.Addr, (UIntPtr)5, 0x40, out old)) continue;
+                    Marshal.Copy(s.Orig, 0, s.Addr, 5);
+                    VirtualProtect(s.Addr, (UIntPtr)5, old, out _);
+                }
+                _teamSaved.Clear();
+                _teamPatchDone = false;
+                Plugin.L.LogInfo("[WulinModKit] team condition restored");
+            }
+            catch (Exception e) { Err("team restore", e); }
+        }
+
+        /// <summary>熄灭所有已点亮的高亮（先清白名单，否则会被 prefix 又点亮）</summary>
+        internal static void ClearHighlights()
+        {
+            var ptrs = new List<IntPtr>(HighlightAdapters);
+            HighlightAdapters.Clear();
+
+            int cleared = 0;
+            foreach (var p in ptrs)
+            {
+                if (p == IntPtr.Zero) continue;
+                try
+                {
+                    var ad = new ViewElemenetAdapator(p);
+                    if (ad != null && ad.Pointer != IntPtr.Zero)
+                    {
+                        ad.SetOutLine(false);
+                        cleared++;
+                    }
+                }
+                catch { }
+            }
+
+            Plugin.L.LogInfo("[WulinModKit] highlight cleared: " + cleared + "/" + ptrs.Count);
+        }
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool VirtualProtect(IntPtr lpAddress, UIntPtr dwSize, uint flNewProtect, out uint lpflOldProtect);
 
         // ---------- ④ 伤害 ----------
         internal static bool IsPlayerSide(BattleActor actor)

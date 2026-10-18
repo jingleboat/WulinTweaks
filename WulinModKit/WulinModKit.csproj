@@ -70,8 +70,28 @@
       <HintPath>$(InteropDir)\UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(InteropDir)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(InteropDir)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(InteropDir)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(InteropDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="GamePlugins.InspectorEnhance.Runtime">
       <HintPath>$(InteropDir)\GamePlugins.InspectorEnhance.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UniverseLib.BIE.IL2CPP.Interop">
+      <HintPath>$(GameDir)\BepInEx\plugins\UniverseLib.BIE.IL2CPP.Interop.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

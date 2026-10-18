@@ -12,7 +12,7 @@ namespace WulinModKit
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.modkit";
-        public const string Version = "1.1.0";
+        public const string Version = "1.2.0";
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -33,6 +33,9 @@ namespace WulinModKit
         // ④ 伤害
         internal static ConfigEntry<float> PlayerDamageMul;
         internal static ConfigEntry<float> EnemyDamageMul;
+
+        // UI
+        internal static ConfigEntry<string> UiToggleKey;
 
         internal static string LuaDir;
 
@@ -63,6 +66,9 @@ namespace WulinModKit
                 "玩家方造成的伤害倍率（1 = 原版）");
             EnemyDamageMul = Config.Bind("4_Damage", "EnemyMultiplier", 1.0f,
                 "敌方造成的伤害倍率（1 = 原版）");
+
+            UiToggleKey = Config.Bind("0_UI", "ToggleKey", "BackQuote",
+                "打开/关闭面板的热键（Unity KeyCode 名称：BackQuote=` / F9 / Insert / Home …）");
 
             H = new Harmony(Guid);
 
