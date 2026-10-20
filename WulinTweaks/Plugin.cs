@@ -98,6 +98,9 @@ namespace WulinTweaks
             SafePatch(typeof(Hooks.TradeConfirm), "TradingWithNpcManager.ConfirmTrading");
             SafePatch(typeof(Hooks.TradeCancel), "TradingWithNpcManager.CancelTrading");
 
+            // ③ 剧情：条件放宽的递归看门狗（见 Hooks.ContinueArrangeGuard 的注释）
+            SafePatch(typeof(Hooks.ContinueArrangeGuard), "StoryManager.ContinueArrange");
+
             L.LogInfo("[WulinTweaks] v" + Version + " loaded. data dir = " + DataDir);
         }
 

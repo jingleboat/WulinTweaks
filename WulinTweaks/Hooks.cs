@@ -274,5 +274,62 @@ namespace WulinTweaks
                 catch (Exception e) { ModKit.Err("hook trade cancel", e); }
             }
         }
+
+        // ============ ③ 剧情：条件放宽的递归看门狗 ============
+
+        /// <summary>
+        /// 放宽「队友是否在队 / 是否有伙伴」之后，某些剧情图里的 Hold 节点会立刻满足，
+        /// 于是 StoryManager.ContinueArrange ↔ HoldNode.OnActive 在同一帧里互相递归，
+        /// 几千层后原生栈溢出 —— 表现就是"对话到一半游戏直接消失"。
+        ///
+        /// 证据（2026-10-20 17:55 那次）：
+        ///   Windows 事件日志 Application Error id=1000：
+        ///     错误模块 GameAssembly.dll，异常代码 0xc00000fd（= STATUS_STACK_OVERFLOW）
+        ///   同一时刻 BepInEx 日志已打出 "team condition patched (skip-to-base) 2/2"，
+        ///   之后没有任何托管异常 —— 是原生栈溢出，不是 C# 异常。
+        ///
+        /// 这里按「同一帧内的调用层数」限深：正常剧情个位数，超阈值就跳过这一层推进
+        /// （跨帧计数会重置，所以卡住的那一帧下一帧还会继续，不会把剧情永久堵死）。
+        /// </summary>
+        [HarmonyPatch(typeof(StoryManager), "ContinueArrange")]
+        internal static class ContinueArrangeGuard
+        {
+            private const int MaxDepth = 16;
+
+            private static int _depth;
+            private static int _frame = -1;
+            private static int _warned;
+
+            static bool Prefix()
+            {
+                try
+                {
+                    if (!Plugin.IgnoreTeamCondition.Value) return true;
+
+                    int f = Time.frameCount;
+                    // 跨帧不可能还留着栈上的递归，顺手把可能泄漏的计数清掉
+                    if (f != _frame) { _frame = f; _depth = 0; }
+
+                    if (_depth >= MaxDepth)
+                    {
+                        if (_warned < 5)
+                        {
+                            _warned++;
+                            Plugin.L.LogWarning("[WulinTweaks] ContinueArrange 同帧已递归 " + _depth
+                                + " 层，阻断这一层（剧情条件放宽引起 Hold 空转；不会栈溢出）");
+                        }
+                        return false;
+                    }
+                    _depth++;
+                }
+                catch (Exception e) { ModKit.Err("guard continueArrange", e); }
+                return true;
+            }
+
+            static void Postfix()
+            {
+                if (_depth > 0) _depth--;
+            }
+        }
     }
 }

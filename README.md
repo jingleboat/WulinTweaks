@@ -33,6 +33,23 @@
 配置文件 `BepInEx/config/wulin.tweaks.cfg` 首次启动时自动生成；
 池子台账在 `BepInEx/config/WulinTweaks/trade-taken.txt`。
 
+### 从源码构建
+
+```powershell
+cd WulinTweaks
+dotnet build -c Release -p:GameDir="D:\path\to\WulinSH"
+# 产物：bin\Release\WulinTweaks.dll → 复制到 <游戏>\BepInEx\plugins\
+```
+
+`GameDir` 三种给法，优先级从高到低：
+
+1. 命令行 `-p:GameDir="..."`；
+2. 在 `WulinTweaks/` 下放一个 `local.props`（已 gitignore）：
+   `<Project><PropertyGroup><GameDir>D:\path\to\WulinSH</GameDir></PropertyGroup></Project>`；
+3. 都不给则用默认的 `C:\Program Files (x86)\Steam\steamapps\common\WulinSH`。
+
+编译依赖游戏的 `BepInEx/core/*.dll` 与 `BepInEx/interop/*.dll`（先启动一次游戏让 BepInEx 生成 interop）。
+
 ---
 
 ## 使用
@@ -113,6 +130,30 @@ GameCharacterInstance（运行时角色实例）
 
 安全性上，机器码 patch 前会校验入口 5 字节为 `48 89 5C 24 08`（`mov [rsp+8], rbx`，恰好一条完整指令），不匹配就放弃并打日志——游戏更新后不会写坏代码段。
 
+### 对话闪退：Hold 空转引起的原生栈溢出
+
+放宽「队友在队 / 有伙伴」之后，有些剧情图里的 `Hold` 节点会立刻满足，于是
+`StoryManager.ContinueArrange` ↔ `HoldNode.OnActive` 在同一帧里互相递归，几千层后栈打穿。
+现场证据（Windows 事件日志 `Application Error` id=1000）：
+
+```
+错误模块: GameAssembly.dll
+异常代码: 0xc00000fd      # STATUS_STACK_OVERFLOW
+```
+
+因为是原生栈溢出，`Player.log` 里不会留下任何托管异常，表现为「对话到一半游戏直接消失」。
+
+现在在 `StoryManager.ContinueArrange` 上挂了一个按**同一帧调用深度**的看门狗：超过 16 层就跳过这一层推进；
+跨帧自动清零，所以卡住的那一帧下一帧会继续，不会把进度永久堵死。只在
+`IgnoreTeamMemberCondition` 打开时生效，关掉时行为完全不变。触发的前 5 次会写日志：
+
+```
+[WulinTweaks] ContinueArrange 同帧已递归 16 层，阻断这一层
+```
+
+> 注意：`ContinueArrange` 的 Harmony patch 与机器码 patch 是两套机制，互不影响。
+> 前者是托管层 prefix，后者改的是条件节点入口字节。
+
 ---
 
 ## 兼容性
@@ -125,6 +166,7 @@ GameCharacterInstance（运行时角色实例）
 
 - 面板需**读取存档后**才能呼出（主菜单阶段 `RoamingManager` 尚未创建）
 - 剧情放宽仅覆盖 `IsJoinedTeamCondition` / `HavePartnerCondition` 两类条件节点
+- 极少数剧情图上放宽会让 `Hold` 节点空转，靠 `ContinueArrange` 看门狗兜住：不再崩溃，代价是那一帧的推进被跳过
 - 机器码 patch 绑定当前版本的 RVA，游戏更新后需重新定位偏移
 - 池子台账按 `InstanceId` 记账；如果某次游戏更新让实例 id 重排，已处理过的角色可能被再补一次
 - 扣池只扣运行时实例（`stealBackPack` / `dropOnDeadBackPack`），不改策划表模板；某个 NPC 若被重新生成、池子从模板重建，那件会再出现（此时台账仍会挡住易物侧的重复复制）
