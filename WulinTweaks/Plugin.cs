@@ -41,6 +41,7 @@ namespace WulinTweaks
 
         // 诊断（排查用，默认关）
         internal static ConfigEntry<bool> StoryDiag;
+        internal static ConfigEntry<bool> StoryCompare;
 
         internal static string DataDir;
 
@@ -90,6 +91,11 @@ namespace WulinTweaks
                 "【排查用】打印每个剧情 Hold 节点的条件检查结果、checkSucessTimes 和同帧重复次数。"
                 + "用来定位「跳过队友条件后剧情反复触发」，平时请保持关闭（开着会刷日志）");
 
+            StoryCompare = Config.Bind("5_Diag", "StoryCompare", false,
+                "【排查用】对每个 Hold 同时算「放宽后」和「原版」两个结果并对比，输出 [compare] 行。"
+                + "放宽通过但原版不通过 = 该事件是被「角色在队」这条条件放开的；两边都通过 = 全条件本来就满足。"
+                + "一次读档就能把已触发的剧情整体归类。会把条件 patch 临时撤销再装回，仅排查时开启");
+
             H = new Harmony(Guid);
 
             SafePatch(typeof(Hooks.InteractiveOutLine1), "InteractiveObject.SetOutLine(bool)");
@@ -119,14 +125,16 @@ namespace WulinTweaks
             // ④ 剧情重复触发诊断（只观测）
             SafePatch(typeof(Hooks.HoldDiag), "HoldNode.CheckCondition");
 
-            // ⑤ 剧情：每个 Hold 只放行一次 —— 已停用。
-            // 它是对**所有**剧情生效的（times != 0 就压回 false），实测会把正常剧情里
-            // 需要复用同一 Hold 的事件一起挡掉（用户反馈「很多正常交互该有的事件不触发」）。
-            // 「压住某些剧情」改由 ⑥ 的非拦截名单按剧情图精确指定，不再做全局压制。
-            // SafePatch(typeof(Hooks.HoldOnceGuard), "HoldNode.CheckCondition");
+            // ⑤ 剧情：兜底压制 —— 名单**外**的图，Hold 的 times 非 0 就不再放行。
+            // 名单只能覆盖已知事件，未知的循环事件靠这里兜住。
+            // （名单内的图在 ⑥ 的 Prefix 里就返回了，不会走到这里的 Postfix。）
+            SafePatch(typeof(Hooks.HoldOnceGuard), "HoldNode.CheckCondition");
 
             // ⑥ 剧情：非拦截名单（名单里的剧情图不放宽）
             SafePatch(typeof(Hooks.HoldBlacklistGuard), "HoldNode.CheckCondition");
+
+            // ⑦ 剧情：放宽 vs 原版 对比（只观测，StoryCompare 开关控制）
+            SafePatch(typeof(Hooks.HoldComparePatch), "HoldNode.CheckCondition");
 
             L.LogInfo("[WulinTweaks] v" + Version + " loaded. data dir = " + DataDir);
         }
