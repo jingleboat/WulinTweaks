@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 using WuLin;
+using WuLin.StateMachine;
 
 namespace WulinTweaks
 {
@@ -329,6 +331,101 @@ namespace WulinTweaks
             static void Postfix()
             {
                 if (_depth > 0) _depth--;
+            }
+        }
+        // ============ ④ 剧情重复触发诊断（只观测，不改行为） ============
+
+        /// <summary>
+        /// 排查「跳过队友条件后剧情反复触发」用的探针。要回答三个问题：
+        ///   1. checkSucessTimes(0x70) 会不会被 Lua 正常置 0→1？（决定「Hold 级一次性放行」是否可行）
+        ///   2. 结果 result=true 时，这个 Hold 是否本来该被条件挡住？（= 放宽是否生效）
+        ///   3. 同一个 Hold 是否在一帧里被反复检查？（= 是不是在同一帧空转）
+        /// 排查完把 StoryDiagnostics 关掉即可，关掉后零开销。
+        /// </summary>
+        [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
+        internal static class HoldDiag
+        {
+            private static readonly Dictionary<IntPtr, int> _calls = new Dictionary<IntPtr, int>();
+            private static readonly Dictionary<IntPtr, int> _frameOf = new Dictionary<IntPtr, int>();
+            private static readonly Dictionary<IntPtr, int> _frameHits = new Dictionary<IntPtr, int>();
+
+            static void Postfix(HoldNode __instance, bool __result)
+            {
+                if (!Plugin.StoryDiag.Value) return;
+                try
+                {
+                    IntPtr p = __instance.Pointer;
+                    int f = Time.frameCount;
+
+                    _calls.TryGetValue(p, out int n);
+                    _calls[p] = ++n;
+
+                    _frameOf.TryGetValue(p, out int lastF);
+                    if (lastF == f) { _frameHits.TryGetValue(p, out int h); _frameHits[p] = h + 1; }
+                    else { _frameOf[p] = f; _frameHits[p] = 1; }
+                    _frameHits.TryGetValue(p, out int hits);
+
+                    // 前 5 次全打；之后每 50 次一条；同帧重复 ≥5 次的一律打（那才是空转现场）
+                    if (n > 5 && (n % 50) != 0 && hits < 5) return;
+
+                    string nm;
+                    try { nm = __instance.name; } catch { nm = "?"; }
+                    int times;
+                    try { times = __instance.checkSucessTimes; } catch { times = -1; }
+
+                    Plugin.L.LogInfo("[diag] Hold \"" + nm + "\" " + p.ToString("X")
+                        + " times=" + times
+                        + " result=" + (__result ? "true" : "false")
+                        + " calls=" + n
+                        + " frameHits=" + hits);
+                }
+                catch (Exception e) { ModKit.Err("diag hold", e); }
+            }
+        }
+        // ============ ⑤ 剧情：Hold 只放行一次（治「剧情反复触发」） ============
+
+        /// <summary>
+        /// HoldNode.checkSucessTimes(0x70) 是游戏自己的「这个 Hold 已经成功过」标志：
+        /// addTimes() 置 1、clearTimes() 置 0。但 CheckCondition() 根本不读它
+        /// （0x3D9DEFC 反汇编：只遍历 conditionPort 调 CheckAllConnectNode），
+        /// 所以原版靠「条件为假」来实现一次性；我们把条件放宽成恒真之后，
+        /// times 已经变成 1 了、结果照样是 true，剧情于是反复触发。
+        ///
+        /// 实测（2026-10-20 诊断日志）：
+        ///   Hold "流程判断" 23CBAF07200  times=0 result=true   ← 第一次，该放行
+        ///   Hold "流程判断" 23CBAF07200  times=1 result=true   ← 之后还在放行 ← 问题在这
+        ///   Hold "流程判断" 23CB9BF1B00  times=1 result=false  ← 原版本来就会挡住的
+        /// 且所有记录 frameHits 都是 1，说明不是同帧空转（那条路径由 ContinueArrange 看门狗管）。
+        ///
+        /// 对策：times 已经非 0 的 Hold，若这次仍被判为「可继续」，就压回 false ——
+        /// 每个 Hold 只可能因为放宽而通过一次。游戏若用 clearTimes() 重置成 0，
+        /// 之后还能再过一次，语义与原版一致。
+        /// </summary>
+        [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
+        internal static class HoldOnceGuard
+        {
+            private static int _warned;
+
+            static void Postfix(HoldNode __instance, ref bool __result)
+            {
+                try
+                {
+                    if (!Plugin.IgnoreTeamCondition.Value) return;
+                    if (!__result) return;
+                    if (__instance.checkSucessTimes == 0) return;   // 还没成功过：这次正常放行
+
+                    __result = false;
+
+                    if (_warned < 8)
+                    {
+                        _warned++;
+                        string nm;
+                        try { nm = __instance.name; } catch { nm = "?"; }
+                        Plugin.L.LogInfo("[once] Hold \"" + nm + "\" times=" + __instance.checkSucessTimes
+                            + " 已经通过过，压制本次继续（避免剧情重复触发）");
+                    }
+                }
+                catch (Exception e) { ModKit.Err("guard hold once", e); }
             }
         }
     }

@@ -67,6 +67,7 @@ dotnet build -c Release -p:GameDir="D:\path\to\WulinSH"
 | 易物作价恒占优 | `4_Trade` | `AlwaysWin` | `false` |
 | 易物列出必掉物＋暗取池 | `4_Trade` | `Pools` | `false` |
 | 确认时搬空 NPC | `4_Trade` | `TakeAllOnConfirm` | `false` |
+| 剧情诊断日志 | `5_Diag` | `StoryDiagnostics` | `false` |
 
 `ToggleKey` 支持 BepInEx 的按键名（`BackQuote` / `F9` / `LeftControl` 等）。游戏内 `F8` 已被占用，故默认用反引号。
 
@@ -154,6 +155,40 @@ GameCharacterInstance（运行时角色实例）
 > 注意：`ContinueArrange` 的 Harmony patch 与机器码 patch 是两套机制，互不影响。
 > 前者是托管层 prefix，后者改的是条件节点入口字节。
 
+### 剧情反复触发：Hold 的「已成功」标志没人读
+
+放宽之后还有第二个症状：同一段剧情反复播。
+
+`HoldNode` 本来有 `checkSucessTimes`（`self+0x70`）作为「这个 Hold 已经成功过」的标志，
+`addTimes()` 置 1、`clearTimes()` 置 0。但 `CheckCondition()` 根本不读它——反汇编确认它只做
+`conditionPort.GetConnections()` → 逐个 `CheckAllConnectNode(io=1, line=null)`。
+原版靠「条件为假」来实现一次性；条件被放宽成恒真之后，标志照常被置 1，结果却依然是 `true`。
+
+诊断日志里同一个 Hold 的三次对比：
+
+```
+[diag] Hold "流程判断" ...  times=0 result=true    ← 第一次，该放行
+[diag] Hold "流程判断" ...  times=1 result=true    ← 已经成功过，还在放行 ← 问题在这
+[diag] Hold "流程判断" ...  times=1 result=false   ← 原版本来就会挡住的
+```
+
+对策是 `HoldOnceGuard`（同样挂在 `HoldNode.CheckCondition`）：`times` 非 0 的 Hold，
+若这次仍被判为「可继续」，就把结果压回 `false`。每个 Hold 只可能因为放宽而通过一次；
+游戏若用 `clearTimes()` 归零，之后还能再过一次，语义与原版一致。
+
+```
+[once] Hold "流程判断" times=1 已经通过过，压制本次继续（避免剧情重复触发）
+```
+
+> 实测 `frameHits` 恒为 1，说明重复触发**不是**同帧空转，与上面那条栈溢出是两条独立路径，
+> 两个 guard 各管一段，不重叠。
+
+### 排查开关
+
+`5_Diag / StoryDiagnostics`（默认 `false`）会把每个 `Hold` 的条件检查结果、
+`checkSucessTimes`、同帧重复次数写进日志（带采样：每个 Hold 前 5 次 + 之后每 50 次，
+同帧重复 ≥5 次的一律记录），不会刷屏。只在排查剧情问题时打开。
+
 ---
 
 ## 兼容性
@@ -167,6 +202,7 @@ GameCharacterInstance（运行时角色实例）
 - 面板需**读取存档后**才能呼出（主菜单阶段 `RoamingManager` 尚未创建）
 - 剧情放宽仅覆盖 `IsJoinedTeamCondition` / `HavePartnerCondition` 两类条件节点
 - 极少数剧情图上放宽会让 `Hold` 节点空转，靠 `ContinueArrange` 看门狗兜住：不再崩溃，代价是那一帧的推进被跳过
+- `HoldOnceGuard` 让每个 Hold 只通过一次；若某段剧情依赖同一 Hold 反复通过（而不是靠 `clearTimes()` 重置），会被压住，这类剧情需要单独加白名单
 - 机器码 patch 绑定当前版本的 RVA，游戏更新后需重新定位偏移
 - 池子台账按 `InstanceId` 记账；如果某次游戏更新让实例 id 重排，已处理过的角色可能被再补一次
 - 扣池只扣运行时实例（`stealBackPack` / `dropOnDeadBackPack`），不改策划表模板；某个 NPC 若被重新生成、池子从模板重建，那件会再出现（此时台账仍会挡住易物侧的重复复制）

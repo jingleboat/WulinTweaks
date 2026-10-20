@@ -65,6 +65,12 @@
       <HintPath>$(InteropDir)\ModShare.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- 剧情节点 HoldNode 的基类在 XNode 里（Node : ScriptableObject），
+         不引它的话 HoldNode.name / .Pointer 都取不到 -->
+    <Reference Include="XNode">
+      <HintPath>$(InteropDir)\XNode.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2Cppmscorlib">
       <HintPath>$(InteropDir)\Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>

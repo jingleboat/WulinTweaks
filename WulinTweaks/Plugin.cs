@@ -38,6 +38,9 @@ namespace WulinTweaks
         // UI
         internal static ConfigEntry<string> UiToggleKey;
 
+        // 诊断（排查用，默认关）
+        internal static ConfigEntry<bool> StoryDiag;
+
         internal static string DataDir;
 
         public override void Load()
@@ -75,6 +78,10 @@ namespace WulinTweaks
             UiToggleKey = Config.Bind("0_UI", "ToggleKey", "BackQuote",
                 "打开/关闭面板的热键（Unity KeyCode 名称：BackQuote=` / F9 / Insert / Home …）");
 
+            StoryDiag = Config.Bind("5_Diag", "StoryDiagnostics", false,
+                "【排查用】打印每个剧情 Hold 节点的条件检查结果、checkSucessTimes 和同帧重复次数。"
+                + "用来定位「跳过队友条件后剧情反复触发」，平时请保持关闭（开着会刷日志）");
+
             H = new Harmony(Guid);
 
             SafePatch(typeof(Hooks.InteractiveOutLine1), "InteractiveObject.SetOutLine(bool)");
@@ -100,6 +107,12 @@ namespace WulinTweaks
 
             // ③ 剧情：条件放宽的递归看门狗（见 Hooks.ContinueArrangeGuard 的注释）
             SafePatch(typeof(Hooks.ContinueArrangeGuard), "StoryManager.ContinueArrange");
+
+            // ④ 剧情重复触发诊断（只观测）
+            SafePatch(typeof(Hooks.HoldDiag), "HoldNode.CheckCondition");
+
+            // ⑤ 剧情：每个 Hold 只放行一次（治「剧情反复触发」）
+            SafePatch(typeof(Hooks.HoldOnceGuard), "HoldNode.CheckCondition");
 
             L.LogInfo("[WulinTweaks] v" + Version + " loaded. data dir = " + DataDir);
         }
