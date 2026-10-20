@@ -43,6 +43,8 @@ namespace WulinTweaks
             public int Id;
             public bool Drop;
             public string Label;
+            /// <summary>造副本时的数量；用来算「玩家到底拿走了几个」</summary>
+            public int Stack0;
         }
 
         private static readonly List<PoolCopy> _copies = new List<PoolCopy>();
@@ -247,10 +249,12 @@ namespace WulinTweaks
 
                     var c = Clone(it);
                     if (c == null) continue;
+                    int st0;
+                    try { st0 = c.Stack; } catch { st0 = it.Stack; }
                     if (!dst.AddItemAsIndependent(c)) continue;
 
                     if (seen != null) seen.Add(id);
-                    _copies.Add(new PoolCopy { Copy = c, Id = id, Drop = drop, Label = tag });
+                    _copies.Add(new PoolCopy { Copy = c, Id = id, Drop = drop, Label = tag, Stack0 = st0 });
                     n++;
                 }
                 catch (Exception e) { ModKit.Err("trade copy pool", e); }
@@ -320,9 +324,10 @@ namespace WulinTweaks
                     if (seen != null && seen.Contains(id)) continue;
                     if (TakenBefore(npc, drop, id)) continue;
 
+                    int st0 = gii.Stack;
                     if (!dst.AddItemAsIndependent(gii)) continue;
                     if (seen != null) seen.Add(id);
-                    _copies.Add(new PoolCopy { Copy = gii, Id = id, Drop = drop, Label = tag });
+                    _copies.Add(new PoolCopy { Copy = gii, Id = id, Drop = drop, Label = tag, Stack0 = st0 });
                     n++;
                     Plugin.L.LogInfo("[WulinTweaks] trade: " + tag + "#" + i + " key=" + k
                         + " cnt=" + cnt + " -> " + gii.ItemName);
@@ -514,7 +519,34 @@ namespace WulinTweaks
             catch (Exception e) { ModKit.Err("trade takeall", e); }
         }
 
-        /// <summary>已被搬走的副本 → 记进台账</summary>
+        /// <summary>
+        /// 从池子原件里扣掉 count 个 itemId。
+        /// 易物拿走的是「副本」，而暗取（StealManager 读 npc.stealBackPack）和摸尸读的是
+        /// 池子原件；不扣的话同一件东西还能被暗取再偷一次。返回实际扣掉的数量。
+        /// </summary>
+        private static int PoolDeduct(GameCharacterInstance npc, bool drop, int itemId, int count)
+        {
+            if (!Truthy(npc) || itemId <= 0 || count <= 0) return 0;
+            GameItemPack pool;
+            try { pool = drop ? npc.DropOnDeadBackPack : npc.StealBackPack; }
+            catch (Exception e) { ModKit.Err("trade pool get", e); return 0; }
+            if (!Truthy(pool)) return 0;
+
+            foreach (var it in Snapshot(pool))
+            {
+                try
+                {
+                    if (it.TempleteId != itemId || it.Stack <= 0) continue;
+                    int take = count < it.Stack ? count : it.Stack;
+                    if (!pool.RemoveItem(it, take)) return 0;
+                    return take;
+                }
+                catch (Exception e) { ModKit.Err("trade pool deduct", e); return 0; }
+            }
+            return 0;
+        }
+
+        /// <summary>已被搬走的副本 → 记进台账，并把池子原件按拿走数量扣掉</summary>
         private static int MarkTakenCopies(GameItemPack bag)
         {
             if (_copies.Count == 0 || !Truthy(_npc)) return 0;
@@ -531,9 +563,18 @@ namespace WulinTweaks
                 try
                 {
                     if (!Truthy(rec.Copy)) continue;
-                    if (present.Contains(rec.Copy.Pointer)) continue;   // 还在背包里 = 没被拿走
+                    bool stillInBag = present.Contains(rec.Copy.Pointer);
+                    int cur = 0;
+                    try { cur = rec.Copy.Stack; } catch { }
+                    int left = stillInBag && cur > 0 ? cur : 0;
+                    int took = rec.Stack0 - left;
+                    if (took <= 0) continue;                 // 还在背包里 = 玩家没要
+
+                    int got = PoolDeduct(_npc, rec.Drop, rec.Id, took);
                     MarkTaken(_npc, rec.Drop, rec.Id);
                     marked++;
+                    Plugin.L.LogInfo("[WulinTweaks] trade pool: " + rec.Label + " id=" + rec.Id
+                        + " took=" + took + " deducted=" + got);
                 }
                 catch (Exception e) { ModKit.Err("trade mark taken", e); }
             }

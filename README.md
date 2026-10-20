@@ -16,7 +16,7 @@
 | ① | **场景高亮** | 关 | 进入场景时扫描一次，给可交互物体加描边。跳过建筑本体（房子、城墙等只显示轮廓的物件）；地面物品只点亮可拾取的（`TempID > 0`），这一条恒开、不做开关 |
 | ② | **大地图解锁** | 关 | 大地图所有地点默认可见、可直接前往；马车地图图标同样全部放开 |
 | ③ | **剧情条件放宽** | 关 | 触发 Scenario 时忽略「队伍中必须存在某角色」的判定，队伍里没有该角色也能推进剧情。**不会**临时增删队员 |
-| ④ | **易物通吃** | 关 | 三个独立开关：作价恒占优（含空手也能确认）、易物列出必掉物＋暗取池、确认时搬空 NPC |
+| ④ | **易物通吃** | 关 | 三个独立开关：作价恒占优（含空手也能确认）、易物列出必掉物＋暗取池、确认时搬空 NPC。拿走的池子物品会**同步从池子原件扣掉**，暗取/摸尸不会再拿到同一件 |
 
 「高亮」只在**进入场景时扫描一次**，不做定时刷新，避免每帧遍历对象表。
 
@@ -84,17 +84,20 @@ GameCharacterInstance（运行时角色实例）
 
 实测（慧元）：`dropOnDeadBackPack` / `stealBackPack` 运行时是**空的**，而模板里 `tplSteal=1` —— 游戏没把模板实例化进去。暗取只认运行时包（`StealManager.OnStealSuccess` 0x43E2C0：取 `[char+0x150]`，件数为 0 就跳走）。
 
-`Pools` 开关**只做易物显示**：把「池子里现有的实物 + 模板里有但池子没填的条目」各复制一份放进 `npc.BackPack`，让易物面板列出来、能拖走。`stealBackPack` / `dropOnDeadBackPack` 本身不写一个字节，因此：
+`Pools` 开关做的是**复制 + 拿走时扣池**：
 
-- 暗取能偷到什么 = 原版（对慧元这类运行时池子为空的 NPC，就是没货）
-- 打死掉什么 = 原版
-- 同一件东西可以「易物换一份 + 暗取/掉落再得一份」，这是纯显示方案必然的代价
+1. 把「池子里现有的实物 + 模板里有但池子没填的条目」各复制一份放进 `npc.BackPack`，让易物面板列出来、能拖走；
+2. 副本被真的拿走（成交/搬空后进了队伍背包）→ 按拿走数量从 `stealBackPack` / `dropOnDeadBackPack` 里 `RemoveItem` 掉同样多；
+3. 于是「易物换了一份，暗取还能再偷一份」这个漏洞被补上——原件少了，暗取就没货。
+
+> v1.0 只复制不扣池，`stealBackPack` 一个字节都不动，同一件能拿两次；**v1.1 起改为扣池**（`TradeKit.PoolDeduct`）。
 
 三处细节值得说明：
 
 1. **副本按物品 id 记账**，记在 `BepInEx/config/WulinTweaks/trade-taken.txt`（键为 `TempleteUid:InstanceId:池:物品id`）。只有「副本真的被搬走」才记账；取消交易不记，所以下次还能看到。不记账的话每次开易物都会再造一份，等于无限复制。
-2. **副本在交易结束时清掉**：取消走 `CleanupCopies`，成交走搬空后的统一清理；异常关闭的残留由下次 `StartTrading` 的 Prefix 兜底。
-3. **搬物品必须新建实例**。`GameItemPack.RemoveItem` 会就地做 `gii.Stack -= count`，而 `AddItem` / `AddItemAsIndependent` 以 `Stack > 0` 为前置条件。把同一个实例「加进目标包、再从源包删掉」会让两边都变成 `Stack == 0` 的空壳——表现为「源包清了、目标包什么都没有」。所以搬运一律 `new GameItemInstance(id, stack)` 进目标包，再删原件。
+2. **扣池按差值算**：造副本时记下数量 `Stack0`，成交后副本剩余 `Stack`，差值就是玩家实际拿走的数量，只扣这么多——玩家只取一部分时，池子里剩下的还在。
+3. **副本在交易结束时清掉**：取消走 `CleanupCopies`，成交走搬空后的统一清理；异常关闭的残留由下次 `StartTrading` 的 Prefix 兜底。
+4. **搬物品必须新建实例**。`GameItemPack.RemoveItem` 会就地做 `gii.Stack -= count`，而 `AddItem` / `AddItemAsIndependent` 以 `Stack > 0` 为前置条件。把同一个实例「加进目标包、再从源包删掉」会让两边都变成 `Stack == 0` 的空壳——表现为「源包清了、目标包什么都没有」。所以搬运一律 `new GameItemInstance(id, stack)` 进目标包，再删原件。
 
 ---
 
@@ -124,6 +127,7 @@ GameCharacterInstance（运行时角色实例）
 - 剧情放宽仅覆盖 `IsJoinedTeamCondition` / `HavePartnerCondition` 两类条件节点
 - 机器码 patch 绑定当前版本的 RVA，游戏更新后需重新定位偏移
 - 池子台账按 `InstanceId` 记账；如果某次游戏更新让实例 id 重排，已处理过的角色可能被再补一次
+- 扣池只扣运行时实例（`stealBackPack` / `dropOnDeadBackPack`），不改策划表模板；某个 NPC 若被重新生成、池子从模板重建，那件会再出现（此时台账仍会挡住易物侧的重复复制）
 - 暗取是否成功仍由游戏自己的成功率公式决定（速度、天赋、等级差），插件只保证「有东西可偷」
 
 ## License
