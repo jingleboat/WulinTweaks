@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Continue'
-$plugin = 'F:\SteamLibrary\steamapps\common\WulinSH\BepInEx\plugins\WulinTweaks.dll'
+$plugin = 'D:\steamgame\steamapps\common\WulinSH\BepInEx\plugins\WulinTweaks.dll'
 $src    = 'C:\Users\User\Documents\deepseek-harness\default-workspace\wulin-mod\WulinTweaks\bin\Release\WulinTweaks.dll'
 $log    = 'C:\Users\User\Documents\deepseek-harness\default-workspace\wulin-mod\tools\autodeploy.log'
 

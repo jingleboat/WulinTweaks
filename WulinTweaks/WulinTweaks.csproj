@@ -16,7 +16,18 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <GameDir>F:\SteamLibrary\steamapps\common\WulinSH</GameDir>
+    <!-- 游戏安装目录。三种给法，优先级从高到低：
+         1) dotnet build -p:GameDir="D:\path\to\WulinSH"
+         2) 在同级放一个 local.props（已 gitignore），内容：
+            <Project><PropertyGroup><GameDir>D:\path\to\WulinSH</GameDir></PropertyGroup></Project>
+         3) 什么都不写，用下面这个 Steam 默认路径 -->
+    <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\WulinSH</GameDir>
+  </PropertyGroup>
+
+  <Import Project="$(MSBuildThisFileDirectory)local.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)local.props')" />
+
+  <PropertyGroup>
     <BepInExCore>$(GameDir)\BepInEx\core</BepInExCore>
     <InteropDir>$(GameDir)\BepInEx\interop</InteropDir>
   </PropertyGroup>
@@ -52,6 +63,12 @@
     </Reference>
     <Reference Include="ModShare.Runtime">
       <HintPath>$(InteropDir)\ModShare.Runtime.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- 剧情节点 HoldNode 的基类在 XNode 里（Node : ScriptableObject），
+         不引它的话 HoldNode.name / .Pointer 都取不到 -->
+    <Reference Include="XNode">
+      <HintPath>$(InteropDir)\XNode.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Il2Cppmscorlib">

@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using HarmonyLib;
 using UnityEngine;
 using WuLin;
+using WuLin.StateMachine;
 
 namespace WulinTweaks
 {
@@ -272,6 +274,524 @@ namespace WulinTweaks
             {
                 try { TradeKit.CleanupCopies(); }
                 catch (Exception e) { ModKit.Err("hook trade cancel", e); }
+            }
+        }
+
+        // ============ ③ 剧情：条件放宽的递归看门狗 ============
+
+        /// <summary>
+        /// 放宽「队友是否在队 / 是否有伙伴」之后，某些剧情图里的 Hold 节点会立刻满足，
+        /// 于是 StoryManager.ContinueArrange ↔ HoldNode.OnActive 在同一帧里互相递归，
+        /// 几千层后原生栈溢出 —— 表现就是"对话到一半游戏直接消失"。
+        ///
+        /// 证据（2026-10-20 17:55 那次）：
+        ///   Windows 事件日志 Application Error id=1000：
+        ///     错误模块 GameAssembly.dll，异常代码 0xc00000fd（= STATUS_STACK_OVERFLOW）
+        ///   同一时刻 BepInEx 日志已打出 "team condition patched (skip-to-base) 2/2"，
+        ///   之后没有任何托管异常 —— 是原生栈溢出，不是 C# 异常。
+        ///
+        /// 这里按「同一帧内的调用层数」限深：正常剧情个位数，超阈值就跳过这一层推进
+        /// （跨帧计数会重置，所以卡住的那一帧下一帧还会继续，不会把剧情永久堵死）。
+        /// </summary>
+        [HarmonyPatch(typeof(StoryManager), "ContinueArrange")]
+        internal static class ContinueArrangeGuard
+        {
+            // 原来这里是 16，太低了：正常一段交互剧情一帧内推进会轻易超过 16 步，
+            // 被当成死循环截断 → 剧情停在半路、事件不弹（实测日志里出现了
+            // 「ContinueArrange 同帧已递归 16 层，阻断这一层」，而 [once]/[blacklist] 都是 0）。
+            // 真正的空转是「没有上界」的递归，256 已经足够兜住栈，又远高于正常推进量。
+            private const int MaxDepth = 256;
+
+            private static int _depth;
+            private static int _frame = -1;
+            private static int _warned;
+
+            static bool Prefix()
+            {
+                try
+                {
+                    if (!Plugin.IgnoreTeamCondition.Value) return true;
+
+                    int f = Time.frameCount;
+                    // 跨帧不可能还留着栈上的递归，顺手把可能泄漏的计数清掉
+                    if (f != _frame) { _frame = f; _depth = 0; }
+
+                    if (_depth >= MaxDepth)
+                    {
+                        if (_warned < 5)
+                        {
+                            _warned++;
+                            Plugin.L.LogWarning("[WulinTweaks] ContinueArrange 同帧已递归 " + _depth
+                                + " 层，阻断这一层（剧情条件放宽引起 Hold 空转；不会栈溢出）");
+                        }
+                        return false;
+                    }
+                    _depth++;
+                }
+                catch (Exception e) { ModKit.Err("guard continueArrange", e); }
+                return true;
+            }
+
+            static void Postfix()
+            {
+                if (_depth > 0) _depth--;
+            }
+        }
+        // ============ ④ 剧情重复触发诊断（只观测，不改行为） ============
+
+        /// <summary>
+        /// 排查「跳过队友条件后剧情反复触发」用的探针。要回答三个问题：
+        ///   1. checkSucessTimes(0x70) 会不会被 Lua 正常置 0→1？（决定「Hold 级一次性放行」是否可行）
+        ///   2. 结果 result=true 时，这个 Hold 是否本来该被条件挡住？（= 放宽是否生效）
+        ///   3. 同一个 Hold 是否在一帧里被反复检查？（= 是不是在同一帧空转）
+        /// 排查完把 StoryDiagnostics 关掉即可，关掉后零开销。
+        /// </summary>
+        [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
+        internal static class HoldDiag
+        {
+            private static readonly Dictionary<IntPtr, int> _calls = new Dictionary<IntPtr, int>();
+            private static readonly Dictionary<IntPtr, int> _frameOf = new Dictionary<IntPtr, int>();
+            private static readonly Dictionary<IntPtr, int> _frameHits = new Dictionary<IntPtr, int>();
+
+            static void Postfix(HoldNode __instance, bool __result)
+            {
+                if (!Plugin.StoryDiag.Value) return;
+                try
+                {
+                    // 条件构成：走纯原生内存读（SafeMem 先校验可读性），
+                    // 不再用 new XNode.NodePort(ptr) 那种错误的托管包装。
+                    HoldCondProbeNative.Dump(__instance);
+
+                    IntPtr p = __instance.Pointer;
+                    int f = Time.frameCount;
+
+                    _calls.TryGetValue(p, out int n);
+                    _calls[p] = ++n;
+
+                    _frameOf.TryGetValue(p, out int lastF);
+                    if (lastF == f) { _frameHits.TryGetValue(p, out int h); _frameHits[p] = h + 1; }
+                    else { _frameOf[p] = f; _frameHits[p] = 1; }
+                    _frameHits.TryGetValue(p, out int hits);
+
+                    // 前 5 次全打；之后每 50 次一条；同帧重复 ≥5 次的一律打（那才是空转现场）
+                    if (n > 5 && (n % 50) != 0 && hits < 5) return;
+
+                    string nm;
+                    try { nm = __instance.name; } catch { nm = "?"; }
+                    int times;
+                    try { times = __instance.checkSucessTimes; } catch { times = -1; }
+
+                    Plugin.L.LogInfo("[diag] Hold \"" + nm + "\" " + p.ToString("X")
+                        + " times=" + times
+                        + " result=" + (__result ? "true" : "false")
+                        + " calls=" + n
+                        + " frameHits=" + hits);
+                }
+                catch (Exception e) { ModKit.Err("diag hold", e); }
+            }
+        }
+        // ============ ⑤ 剧情：Hold 只放行一次（治「剧情反复触发」） ============
+
+        /// <summary>
+        /// HoldNode.checkSucessTimes(0x70) 是游戏自己的「这个 Hold 已经成功过」标志：
+        /// addTimes() 置 1、clearTimes() 置 0。但 CheckCondition() 根本不读它
+        /// （0x3D9DEFC 反汇编：只遍历 conditionPort 调 CheckAllConnectNode），
+        /// 所以原版靠「条件为假」来实现一次性；我们把条件放宽成恒真之后，
+        /// times 已经变成 1 了、结果照样是 true，剧情于是反复触发。
+        ///
+        /// 实测（2026-10-20 诊断日志）：
+        ///   Hold "流程判断" 23CBAF07200  times=0 result=true   ← 第一次，该放行
+        ///   Hold "流程判断" 23CBAF07200  times=1 result=true   ← 之后还在放行 ← 问题在这
+        ///   Hold "流程判断" 23CB9BF1B00  times=1 result=false  ← 原版本来就会挡住的
+        /// 且所有记录 frameHits 都是 1，说明不是同帧空转（那条路径由 ContinueArrange 看门狗管）。
+        ///
+        /// 对策：times 已经非 0 的 Hold，若这次仍被判为「可继续」，就压回 false ——
+        /// 每个 Hold 只可能因为放宽而通过一次。游戏若用 clearTimes() 重置成 0，
+        /// 之后还能再过一次，语义与原版一致。
+        /// </summary>
+        [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
+        internal static class HoldOnceGuard
+        {
+            private static int _warned;
+
+            static void Postfix(HoldNode __instance, ref bool __result)
+            {
+                try
+                {
+                    if (!Plugin.IgnoreTeamCondition.Value) return;
+                    if (!__result) return;
+                    if (__instance.checkSucessTimes == 0) return;   // 还没成功过：这次正常放行
+
+                    __result = false;
+
+                    if (_warned < 8)
+                    {
+                        _warned++;
+                        string nm;
+                        try { nm = __instance.name; } catch { nm = "?"; }
+                        Plugin.L.LogInfo("[once] Hold \"" + nm + "\" times=" + __instance.checkSucessTimes
+                            + " 已经通过过，压制本次继续（避免剧情重复触发）");
+                    }
+                }
+                catch (Exception e) { ModKit.Err("guard hold once", e); }
+            }
+        }
+        // ============ ⑥ 剧情：非拦截名单（对这些剧情图不放宽） ============
+
+        /// <summary>
+        /// 有些剧情一旦条件恒真就会反复触发，或者玩家这会儿并不想触发它。
+        /// 名单是按**剧情图名**（NodeGraph.name，例如 R10028-7）匹配的 ——
+        /// 运行时从节点拿 graph：XNode.Node.graph 在 0x18，NodeGraph 是 ScriptableObject，
+        /// name 就是剧情图 ID。名单里的图，Hold 一律判为「不继续」，
+        /// 等价于恢复原版的严格判断（也就不用管它到底被哪条条件挡住了）。
+        ///
+        /// 已知对照（来自本地化表 json/3/LocData.txt 的 *_name 键）：
+        ///   R10028-7 = 一醉方休     R10025-6 = 杯中明镜
+        ///   R10112-2 = 烈酒与故事   R10005-11 = 苗彩蝶(uid 10005) 相关
+        /// </summary>
+        [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
+        internal static class HoldBlacklistGuard
+        {
+            private static readonly HashSet<string> _logged = new HashSet<string>();
+
+            static void Postfix(HoldNode __instance, ref bool __result)
+            {
+                try
+                {
+                    if (!__result) return;
+                    if (!Plugin.IgnoreTeamCondition.Value) return;
+
+                    string gn = GraphNameOf(__instance);
+                    if (string.IsNullOrEmpty(gn)) return;
+                    if (!Plugin.IsStoryBlacklisted(gn)) return;
+
+                    // 名单内的剧情图：只放行第一次（times == 0），之后压回 false。
+                    // 这样事件还能正常触发一次，但不会像放宽后那样一直重复。
+                    // （早先的 HoldOnceGuard 是对所有剧情生效，会误伤正常复用，已停用。）
+                    int times = 0;
+                    try { times = __instance.checkSucessTimes; } catch { }
+                    if (times == 0) return;
+
+                    __result = false;
+
+                    if (_logged.Add(gn))
+                        Plugin.L.LogInfo("[blacklist] 剧情图 " + gn + " 在名单里，且已通过过（times=" + times
+                            + "），本次不再重复放行");
+                }
+                catch (Exception e) { ModKit.Err("guard blacklist", e); }
+            }
+
+            internal static string GraphNameOf(HoldNode node)
+            {
+                try
+                {
+                    var g = node.graph;              // XNode.Node.graph (0x18)
+                    if (g == null) return null;
+                    return g.name;                    // ScriptableObject.name = 剧情图 ID
+                }
+                catch { return null; }
+            }
+        }
+        // ============ ⑦ 剧情条件构成探针（回答「是不是因为角色在队」）============
+
+        /// <summary>
+        /// `IsJoinedTeamCondition` / `HavePartnerCondition` 没有导出到互操作程序集，
+        /// 所以 C# 里既不能 typeof 也不能 GetField。这里退回原生：
+        ///   il2cpp_object_get_class(obj) -> Il2CppClass*
+        ///   il2cpp_class_get_name(cls)   -> const char*（类名，未混淆，就是 dump 里的名字）
+        /// 再按已知偏移直接读 ConditionNode 上的 partnerID(+0x58) / Negate(+0x5C)。
+        /// 只读不改，用于判断某个 Hold 到底卡在「角色在队」还是别的条件上。
+        /// </summary>
+        internal static class Il2CppProbe
+        {
+            [System.Runtime.InteropServices.DllImport("kernel32", CharSet = System.Runtime.InteropServices.CharSet.Ansi, SetLastError = true)]
+            private static extern IntPtr GetModuleHandleA(string name);
+
+            [System.Runtime.InteropServices.DllImport("kernel32", CharSet = System.Runtime.InteropServices.CharSet.Ansi, SetLastError = true)]
+            private static extern IntPtr GetProcAddress(IntPtr module, string proc);
+
+            private delegate IntPtr FnObjGetClass(IntPtr obj);
+            private delegate IntPtr FnClsGetName(IntPtr klass);
+
+            private static FnObjGetClass _objGetClass;
+            private static FnClsGetName _clsGetName;
+            private static bool _inited;
+
+            private static void Init()
+            {
+                if (_inited) return;
+                _inited = true;
+                try
+                {
+                    var h = GetModuleHandleA("GameAssembly.dll");
+                    if (h == IntPtr.Zero) { Plugin.L.LogWarning("[probe] GameAssembly.dll 没找到"); return; }
+                    var p1 = GetProcAddress(h, "il2cpp_object_get_class");
+                    var p2 = GetProcAddress(h, "il2cpp_class_get_name");
+                    if (p1 != IntPtr.Zero)
+                        _objGetClass = System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<FnObjGetClass>(p1);
+                    if (p2 != IntPtr.Zero)
+                        _clsGetName = System.Runtime.InteropServices.Marshal.GetDelegateForFunctionPointer<FnClsGetName>(p2);
+                }
+                catch (Exception e) { ModKit.Err("probe init", e); }
+            }
+
+            internal static string ClassNameOf(IntPtr obj)
+            {
+                Init();
+                if (_objGetClass == null || _clsGetName == null || obj == IntPtr.Zero) return "?";
+                // 进 il2cpp API 之前先确认对象头可读，否则它会拿垃圾 klass 指针继续解引用
+                if (!SafeMem.Readable(obj, 0x10)) return "?";
+                try
+                {
+                    var cls = _objGetClass(obj);
+                    if (cls == IntPtr.Zero || !SafeMem.Readable(cls, 0x10)) return "?";
+                    var p = _clsGetName(cls);
+                    if (p == IntPtr.Zero || !SafeMem.Readable(p, 1)) return "?";
+                    return System.Runtime.InteropServices.Marshal.PtrToStringAnsi(p, 96);
+                }
+                catch { return "?"; }
+            }
+        }
+
+        /// <summary>把一个 Hold 的条件端口上的节点全列出来：类名 + partnerID + 取反</summary>
+        internal static class HoldConditionProbe
+        {
+            private static readonly HashSet<IntPtr> _done = new HashSet<IntPtr>();
+
+            internal static void Dump(HoldNode node)
+            {
+                if (!Plugin.StoryDiag.Value) return;
+                if (node == null) return;
+
+                IntPtr holdPtr = node.Pointer;
+                if (!_done.Add(holdPtr)) return;          // 每个 Hold 只抽一次
+
+                try
+                {
+                    string graph;
+                    try { graph = node.graph == null ? "?" : node.graph.name; } catch { graph = "?"; }
+                    string nm;
+                    try { nm = node.name; } catch { nm = "?"; }
+
+                    Plugin.L.LogInfo("[cond] Hold \"" + nm + "\" graph=" + graph);
+
+                    var port = node.conditionPort;
+                    if (port == null) { Plugin.L.LogInfo("    (conditionPort = null)"); return; }
+
+                    // StoryDefaultNode.ConditionPort 在 interop 里没有继承 XNode.NodePort
+                    // （两个类型分属不同程序集），所以拿不到 GetConnections()。
+                    // 用原生指针包一层 NodePort 再走它的公开方法。
+                    XNode.NodePort xport;
+                    try { xport = new XNode.NodePort(port.Pointer); }
+                    catch (Exception ex) { Plugin.L.LogInfo("    (包 NodePort 失败: " + ex.GetType().Name + ")"); return; }
+                    if (xport == null) { Plugin.L.LogInfo("    (NodePort = null)"); return; }
+
+                    var list = xport.GetConnections();
+                    if (list == null || list.Count == 0)
+                    {
+                        Plugin.L.LogInfo("    (条件端口没有连线)");
+                        return;
+                    }
+
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        var np = list[i];
+                        if (np == null) continue;
+                        var condNode = np.node;
+                        if (condNode == null) continue;
+
+                        IntPtr p = condNode.Pointer;
+                        string cn = Il2CppProbe.ClassNameOf(p);
+
+                        string extra = "";
+                        if (cn != null && (cn.Contains("JoinedTeam") || cn.Contains("HavePartner")))
+                        {
+                            try
+                            {
+                                int pid = System.Runtime.InteropServices.Marshal.ReadInt32(p, 0x58);
+                                bool neg = System.Runtime.InteropServices.Marshal.ReadByte(p, 0x5C) != 0;
+                                extra = "  partnerID=" + pid + " Negate=" + (neg ? "true" : "false");
+                            }
+                            catch { }
+                        }
+                        Plugin.L.LogInfo("    - " + cn + extra);
+                    }
+                }
+                catch (Exception e) { ModKit.Err("probe cond", e); }
+            }
+        }
+        // ============ ⑧ 剧情条件构成探针（纯原生内存读，带地址校验）============
+
+        /// <summary>
+        /// 上一次用 `new XNode.NodePort(ptr).GetConnections()` 把 coreclr 打崩了
+        /// （ConditionPort 在 interop 里没继承 NodePort，布局对不上）。
+        /// 这次完全不碰托管包装，只按已知偏移走原生内存：
+        ///   HoldNode.conditionPort   +0x60  -> NodePort*
+        ///   NodePort.connections     +0x20  -> List&lt;PortConnection&gt;*
+        ///   List._items              +0x10  -> Il2CppArray*
+        ///   List._size               +0x18  -> int
+        ///   Il2CppArray 数据          +0x20  -> PortConnection*[]
+        ///   PortConnection.node      +0x18  -> ConditionNode*
+        /// 每次读之前先用 VirtualQuery 确认目标页可读，避免再出现访问冲突。
+        /// </summary>
+        internal static class SafeMem
+        {
+            [System.Runtime.InteropServices.DllImport("kernel32", SetLastError = true)]
+            private static extern UIntPtr VirtualQuery(IntPtr addr, out MBI info, UIntPtr len);
+
+            [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+            private struct MBI
+            {
+                public IntPtr BaseAddress;
+                public IntPtr AllocationBase;
+                public uint AllocationProtect;
+                public UIntPtr RegionSize;
+                public uint State;
+                public uint Protect;
+                public uint Type;
+            }
+
+            private const uint MEM_COMMIT = 0x1000;
+            private const uint PAGE_GUARD = 0x100;
+            private const uint PAGE_NOACCESS = 0x01;
+
+            internal static bool Readable(IntPtr addr, int size)
+            {
+                if (addr == IntPtr.Zero) return false;
+                if (addr.ToInt64() < 0x10000) return false;          // 挡住空指针与低地址垃圾
+                if (addr.ToInt64() > 0x7FFFFFFFFFFF) return false;    // 用户态上限
+                try
+                {
+                    MBI mbi;
+                    var sz = (UIntPtr)System.Runtime.InteropServices.Marshal.SizeOf(typeof(MBI));
+                    if (VirtualQuery(addr, out mbi, sz) == UIntPtr.Zero) return false;
+                    if (mbi.State != MEM_COMMIT) return false;
+                    if ((mbi.Protect & PAGE_GUARD) != 0) return false;
+                    if ((mbi.Protect & 0xFF) == PAGE_NOACCESS) return false;
+                    long remain = (long)mbi.RegionSize.ToUInt64() - (addr.ToInt64() - mbi.BaseAddress.ToInt64());
+                    return remain >= size;
+                }
+                catch { return false; }
+            }
+
+            internal static IntPtr Ptr(IntPtr baseAddr, int offset)
+            {
+                if (!Readable(baseAddr, offset + 8)) return IntPtr.Zero;
+                try { return System.Runtime.InteropServices.Marshal.ReadIntPtr(baseAddr, offset); }
+                catch { return IntPtr.Zero; }
+            }
+
+            internal static int Int32(IntPtr baseAddr, int offset)
+            {
+                if (!Readable(baseAddr, offset + 4)) return 0;
+                try { return System.Runtime.InteropServices.Marshal.ReadInt32(baseAddr, offset); }
+                catch { return 0; }
+            }
+
+            internal static byte Byte(IntPtr baseAddr, int offset)
+            {
+                if (!Readable(baseAddr, offset + 1)) return 0;
+                try { return System.Runtime.InteropServices.Marshal.ReadByte(baseAddr, offset); }
+                catch { return 0; }
+            }
+        }
+
+        /// <summary>列出某个 Hold 条件端口上的节点：类名 + partnerID + 取反</summary>
+        internal static class HoldCondProbeNative
+        {
+            private const int OFF_HOLD_COND_PORT = 0x60;
+            private const int OFF_NODEPORT_CONNS = 0x20;
+            private const int OFF_LIST_ITEMS = 0x10;
+            private const int OFF_LIST_SIZE = 0x18;
+            private const int OFF_ARRAY_DATA = 0x20;
+            private const int OFF_CONN_NODE = 0x18;
+
+            private static readonly HashSet<IntPtr> _done = new HashSet<IntPtr>();
+
+            internal static void Dump(HoldNode node)
+            {
+                if (!Plugin.StoryDiag.Value) return;
+                if (node == null) return;
+
+                IntPtr holdPtr = node.Pointer;
+                if (!SafeMem.Readable(holdPtr, 0x68)) return;
+                if (!_done.Add(holdPtr)) return;      // 每个 Hold 只抽一次
+
+                try
+                {
+                    string graph;
+                    try { graph = (node.graph == null) ? "?" : node.graph.name; } catch { graph = "?"; }
+                    string nm;
+                    try { nm = node.name; } catch { nm = "?"; }
+
+                    Plugin.L.LogInfo("[cond] Hold \"" + nm + "\" graph=" + graph);
+
+                    // ---- 偏移自适应 ----
+                    // 手机版 dump 里 conditionPort 在 0x60，但 PC 是 Unity 2020.3 的另一套
+                    // 编译产物，布局未必一致（实测按 0x60 裸读出来的 list 是垃圾值）。
+                    // 这里用 interop 字段访问拿一次「真」的 ConditionPort 指针作锚点
+                    // （读字段本身是安全的，之前崩的是拿去强转 NodePort 再调方法），
+                    // 再扫一遍 NodePort 的候选偏移，找哪个位置像是 List<PortConnection>。
+                    IntPtr portInterop = IntPtr.Zero;
+                    try { if (node.conditionPort != null) portInterop = node.conditionPort.Pointer; }
+                    catch { }
+                    IntPtr portRaw = SafeMem.Ptr(holdPtr, OFF_HOLD_COND_PORT);
+
+                    Plugin.L.LogInfo("[off] hold=" + holdPtr.ToString("X")
+                        + " condPort(interop)=" + portInterop.ToString("X")
+                        + " condPort(raw+0x60)=" + portRaw.ToString("X")
+                        + (portInterop == portRaw ? "  ✔ 偏移正确" : "  ✘ 偏移不符"));
+
+                    IntPtr port = (portInterop != IntPtr.Zero) ? portInterop : portRaw;
+                    if (port == IntPtr.Zero) { Plugin.L.LogInfo("    (conditionPort = null)"); return; }
+
+                    // 扫描：把 port 各候选偏移处的值当成 List 试读，_items 有效且 _size 在 (0,64] 就报出来
+                    int listOff = -1;
+                    for (int o = 0x10; o <= 0x40; o += 8)
+                    {
+                        IntPtr cand = SafeMem.Ptr(port, o);
+                        if (cand == IntPtr.Zero) continue;
+                        IntPtr items = SafeMem.Ptr(cand, OFF_LIST_ITEMS);
+                        int size = SafeMem.Int32(cand, OFF_LIST_SIZE);
+                        if (items == IntPtr.Zero) continue;
+                        if (size <= 0 || size > 64) continue;
+                        Plugin.L.LogInfo("    [off] 候选 connections @port+0x" + o.ToString("X")
+                            + " items=" + items.ToString("X") + " size=" + size);
+                        if (listOff < 0) listOff = o;
+                    }
+                    if (listOff < 0) { Plugin.L.LogInfo("    (没扫到像 List 的偏移)"); return; }
+
+                    IntPtr list = SafeMem.Ptr(port, listOff);
+                    if (list == IntPtr.Zero) { Plugin.L.LogInfo("    (connections = null)"); return; }
+
+                    IntPtr arr = SafeMem.Ptr(list, OFF_LIST_ITEMS);
+                    int n = SafeMem.Int32(list, OFF_LIST_SIZE);
+                    if (arr == IntPtr.Zero || n <= 0 || n > 64)
+                    {
+                        Plugin.L.LogInfo("    (连线数异常: n=" + n + " arr=" + arr.ToString("X") + ")");
+                        return;
+                    }
+
+                    for (int i = 0; i < n; i++)
+                    {
+                        IntPtr conn = SafeMem.Ptr(arr, OFF_ARRAY_DATA + i * 8);
+                        if (conn == IntPtr.Zero) continue;
+
+                        IntPtr cn = SafeMem.Ptr(conn, OFF_CONN_NODE);
+                        if (cn == IntPtr.Zero) continue;
+
+                        string cls = Il2CppProbe.ClassNameOf(cn);
+                        string extra = "";
+                        if (cls != null && (cls.Contains("JoinedTeam") || cls.Contains("HavePartner")))
+                        {
+                            int pid = SafeMem.Int32(cn, 0x58);
+                            bool neg = SafeMem.Byte(cn, 0x5C) != 0;
+                            extra = "  partnerID=" + pid + " Negate=" + (neg ? "true" : "false");
+                        }
+                        Plugin.L.LogInfo("    - " + cls + extra);
+                    }
+                }
+                catch (Exception e) { ModKit.Err("probe cond native", e); }
             }
         }
     }

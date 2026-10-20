@@ -28,6 +28,7 @@ namespace WulinTweaks
 
         // ③ 剧情
         internal static ConfigEntry<bool> IgnoreTeamCondition;
+        internal static ConfigEntry<string> StoryBlacklist;
 
         // ④ 易物
         // 全部默认关闭；面板上改动会立即写进 cfg，下次启动沿用上次状态
@@ -37,6 +38,9 @@ namespace WulinTweaks
 
         // UI
         internal static ConfigEntry<string> UiToggleKey;
+
+        // 诊断（排查用，默认关）
+        internal static ConfigEntry<bool> StoryDiag;
 
         internal static string DataDir;
 
@@ -61,6 +65,13 @@ namespace WulinTweaks
             IgnoreTeamCondition = Config.Bind("3_Story", "IgnoreTeamMemberCondition", false,
                 "剧情触发时忽略「队伍中是否存在某角色」条件");
 
+            StoryBlacklist = Config.Bind("3_Story", "IgnoreTeamConditionBlacklist", "R10005-11",
+                "「只触发一次」的剧情图名单（逗号分隔；按前缀匹配就在末尾加 *，例如 R10005-*）。"
+                + "名单里的剧情图：Hold 只放行第一次，之后不再重复 —— 用来治那些条件一旦恒真就会反复触发的事件。"
+                + "留空 = 所有剧情都照常放宽。"
+                + "已知对照：R10005-11=苗彩蝶(uid 10005) 那段循环；"
+                + "R10028-7=一醉方休，R10025-6=杯中明镜，R10112-2=烈酒与故事（需要时自行加上）");
+
             TradeAlwaysWin = Config.Bind("4_Trade", "AlwaysWin", false,
                 "易物时玩家方作价永远 >= NPC 方，NPC 一律接受；"
                 + "同时让玩家交易区为空也能确认成交");
@@ -74,6 +85,10 @@ namespace WulinTweaks
 
             UiToggleKey = Config.Bind("0_UI", "ToggleKey", "BackQuote",
                 "打开/关闭面板的热键（Unity KeyCode 名称：BackQuote=` / F9 / Insert / Home …）");
+
+            StoryDiag = Config.Bind("5_Diag", "StoryDiagnostics", false,
+                "【排查用】打印每个剧情 Hold 节点的条件检查结果、checkSucessTimes 和同帧重复次数。"
+                + "用来定位「跳过队友条件后剧情反复触发」，平时请保持关闭（开着会刷日志）");
 
             H = new Harmony(Guid);
 
@@ -98,7 +113,56 @@ namespace WulinTweaks
             SafePatch(typeof(Hooks.TradeConfirm), "TradingWithNpcManager.ConfirmTrading");
             SafePatch(typeof(Hooks.TradeCancel), "TradingWithNpcManager.CancelTrading");
 
+            // ③ 剧情：条件放宽的递归看门狗（见 Hooks.ContinueArrangeGuard 的注释）
+            SafePatch(typeof(Hooks.ContinueArrangeGuard), "StoryManager.ContinueArrange");
+
+            // ④ 剧情重复触发诊断（只观测）
+            SafePatch(typeof(Hooks.HoldDiag), "HoldNode.CheckCondition");
+
+            // ⑤ 剧情：每个 Hold 只放行一次 —— 已停用。
+            // 它是对**所有**剧情生效的（times != 0 就压回 false），实测会把正常剧情里
+            // 需要复用同一 Hold 的事件一起挡掉（用户反馈「很多正常交互该有的事件不触发」）。
+            // 「压住某些剧情」改由 ⑥ 的非拦截名单按剧情图精确指定，不再做全局压制。
+            // SafePatch(typeof(Hooks.HoldOnceGuard), "HoldNode.CheckCondition");
+
+            // ⑥ 剧情：非拦截名单（名单里的剧情图不放宽）
+            SafePatch(typeof(Hooks.HoldBlacklistGuard), "HoldNode.CheckCondition");
+
             L.LogInfo("[WulinTweaks] v" + Version + " loaded. data dir = " + DataDir);
+        }
+
+        /// <summary>
+        /// 非拦截名单匹配：默认精确比对剧情图 ID；条目末尾带 * 时按前缀匹配
+        /// （比如 R10005-* 覆盖该角色的所有剧情图）。
+        /// </summary>
+        internal static bool IsStoryBlacklisted(string graphName)
+        {
+            try
+            {
+                string raw = StoryBlacklist == null ? null : StoryBlacklist.Value;
+                if (string.IsNullOrEmpty(raw) || string.IsNullOrEmpty(graphName)) return false;
+
+                foreach (var piece in raw.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' },
+                                                StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var p = piece.Trim();
+                    if (p.Length == 0) continue;
+
+                    if (p.EndsWith("*"))
+                    {
+                        var prefix = p.Substring(0, p.Length - 1);
+                        if (prefix.Length > 0 &&
+                            graphName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                    else if (string.Equals(graphName, p, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
         }
 
         private void SafePatch(Type patchClass, string label)
