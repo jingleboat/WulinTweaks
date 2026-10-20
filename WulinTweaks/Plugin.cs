@@ -136,6 +136,9 @@ namespace WulinTweaks
             // ⑦ 剧情：放宽 vs 原版 对比（只观测，StoryCompare 开关控制）
             SafePatch(typeof(Hooks.HoldComparePatch), "HoldNode.CheckCondition");
 
+            // 探测：能否 patch StoryManager.CheckConditionFromRoot（条件检查总入口）
+            SafePatch(typeof(ConditionRootGuard), "StoryManager.CheckConditionFromRoot");
+
             L.LogInfo("[WulinTweaks] v" + Version + " loaded. data dir = " + DataDir);
         }
 
