@@ -140,13 +140,14 @@ namespace WulinTweaks
 
         private static readonly HashSet<string> _njLog = new HashSet<string>();
 
-        /// <summary>该角色是否从未入队：m_TeamMemberState(+0x130) == NULL。拿不到就返回 false（不特殊处理）。</summary>
-        // uid -> (是否从未入队, 计算时刻)。入队状态会变，5 秒过期。
+        /// <summary>该角色是否从未入队：m_TeamMemberState(+0x130) == NULL。
+        /// 拿不到实例 / 管理器未就绪 → **也是「从未入队」**（与 TeamRule 口径一致：不放宽）。</summary>
+        // uid -> (是否从未入队, 计算时刻)。入队状态会变，2 秒过期。
         private static readonly Dictionary<int, KeyValuePair<bool, float>> _njCache = new Dictionary<int, KeyValuePair<bool, float>>();
 
         private static bool IsNeverJoined(int uid)
         {
-            if (_njCache.TryGetValue(uid, out var e) && (Time.realtimeSinceStartup - e.Value) < 5f)
+            if (_njCache.TryGetValue(uid, out var e) && (Time.realtimeSinceStartup - e.Value) < 2f)
                 return e.Key;
             bool v = IsNeverJoinedRaw(uid);
             _njCache[uid] = new KeyValuePair<bool, float>(v, Time.realtimeSinceStartup);
@@ -159,20 +160,20 @@ namespace WulinTweaks
             {
                 if (uid <= 0)
                 {
-                    if (_njLog.Add("uid" + uid)) Plugin.L.LogInfo("[nj] uid=" + uid + " -> 无效 id，返回 false");
+                    if (_njLog.Add("uid" + uid)) Plugin.L.LogInfo("[nj] uid=" + uid + " -> 无效 id，不算本命条件");
                     return false;
                 }
                 var mgr = GameCharacterManager.Instance;
                 if (mgr == null)
                 {
-                    if (_njLog.Add("mgr")) Plugin.L.LogWarning("[nj] GameCharacterManager.Instance = null");
-                    return false;
+                    if (_njLog.Add("mgr")) Plugin.L.LogWarning("[nj] GameCharacterManager.Instance = null → 按「从未入队」");
+                    return true;
                 }
                 var c = mgr.GetCharacter(uid);
                 if (c == null)
                 {
-                    if (_njLog.Add("c" + uid)) Plugin.L.LogInfo("[nj] uid=" + uid + " -> GetCharacter=null，返回 false");
-                    return false;
+                    if (_njLog.Add("c" + uid)) Plugin.L.LogInfo("[nj] uid=" + uid + " 实例未创建 → 从未入队（不放宽）");
+                    return true;
                 }
                 IntPtr cp = c.Pointer;
                 IntPtr tms = Hooks.SafeMem.Ptr(cp, 0x130);
@@ -185,8 +186,9 @@ namespace WulinTweaks
             catch (Exception e)
             {
                 if (_njLog.Add("ex" + uid))
-                    Plugin.L.LogWarning("[nj] uid=" + uid + " 异常: " + e.GetType().Name + " " + e.Message);
-                return false;
+                    Plugin.L.LogWarning("[nj] uid=" + uid + " 异常: " + e.GetType().Name + " " + e.Message
+                        + " → 按「从未入队」");
+                return true;
             }
         }
 

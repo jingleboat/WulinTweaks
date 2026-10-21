@@ -24,12 +24,15 @@ namespace WulinTweaks
         private static readonly Dictionary<IntPtr, KeyValuePair<bool, float>> _cache =
             new Dictionary<IntPtr, KeyValuePair<bool, float>>(256);
         private const float CacheTtl = 3f;
+        // 「从未入队」判定缓存：太短会每次都读内存，太长则角色入队后剧情开得晚
+        private const float NjTtl = 2f;
         private static readonly Regex _rId = new Regex(@"^R(\d{5})-", RegexOptions.Compiled);
         private static readonly Dictionary<int, KeyValuePair<bool, float>> _nj = new Dictionary<int, KeyValuePair<bool, float>>();
 
         private static readonly HashSet<string> _fixed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "Fame-2",
+            "Guide10099-1",                                     // 2026-10-21 追加：与 6/11/13… 同属师父线
             "Guide10099-6", "Guide10099-11", "Guide10099-13",
             "Guide10099-15", "Guide10099-16", "Guide10099-18",
         };
@@ -81,18 +84,37 @@ namespace WulinTweaks
             catch (Exception e) { ModKit.Err("team rule", e); return true; }
         }
 
+        /// <summary>
+        /// 「该角色从未入过队」。
+        ///   实例存在 → 看 m_TeamMemberState(0x130) 是否 NULL；
+        ///   实例不存在 / 管理器未就绪 / 抛异常 → **也是从未入队**（不放宽）。
+        ///
+        /// 2026-10-21 修正：旧实现把「拿不到实例」当成「已入队」（返回 false），
+        /// 于是新档里游戏还没创建实例的角色（大部分角色）判据全部失效，
+        /// 本命角色的个人剧情被放宽 → 不该触发的剧情提前触发。
+        /// 语义上「连实例都没有」必然没入过队，所以兜底方向只能是 true。
+        /// </summary>
         private static bool IsNeverJoined(int uid)
         {
-            if (_nj.TryGetValue(uid, out var e) && (UnityEngine.Time.realtimeSinceStartup - e.Value) < 5f)
+            if (uid <= 0) return false;          // 没有 partnerID 不算本命条件
+
+            if (_nj.TryGetValue(uid, out var e) && (UnityEngine.Time.realtimeSinceStartup - e.Value) < NjTtl)
                 return e.Key;
+
             bool v;
             try
             {
                 var mgr = GameCharacterManager.Instance;
-                var c = (mgr == null) ? null : mgr.GetCharacter(uid);
-                v = (c != null) && (Hooks.SafeMem.Ptr(c.Pointer, OFF_TEAM_STATE) == IntPtr.Zero);
+                if (mgr == null) v = true;                       // 管理器未就绪：保守按「从未入队」
+                else
+                {
+                    var c = mgr.GetCharacter(uid);
+                    if (c == null) v = true;                     // 实例还没创建：必然没入过队
+                    else v = Hooks.SafeMem.Ptr(c.Pointer, OFF_TEAM_STATE) == IntPtr.Zero;
+                }
             }
-            catch { v = false; }
+            catch { v = true; }                                  // 读失败：保守按「从未入队」
+
             _nj[uid] = new KeyValuePair<bool, float>(v, UnityEngine.Time.realtimeSinceStartup);
             return v;
         }

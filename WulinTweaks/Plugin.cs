@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.9.0";
+        public const string Version = "1.9.2";   // 1.9.1 修「实例未创建→误放宽」；1.9.2 追加 Guide10099-1 进固定名单
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
