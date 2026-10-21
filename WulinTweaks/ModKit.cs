@@ -415,27 +415,13 @@ namespace WulinTweaks
                     return;
                 }
 
-                var baseImpl = h + BaseCheckAllConnectNodeRva;
-
-                int ok = 0;
-                var failed = "";
-                foreach (var t in TeamCondConnectNodes)
-                {
-                    if (PatchJumpTo(h, t.Rva, baseImpl)) ok++;
-                    else failed += (failed.Length == 0 ? "" : ", ") + t.Name;
-                }
-
-                if (ok == TeamCondConnectNodes.Length)
-                {
-                    _teamPatchDone = true;
-                    Plugin.L.LogInfo("[WulinTweaks] team condition patched (skip-to-base) " + ok + "/" + TeamCondConnectNodes.Length);
-                }
+                // 用 dobby 做原生 inline hook，接管 CheckAllConnectNode，
+                // 由 NativeTeamHook 按规则决定「走基类（放宽）」还是「执行原版」。
+                _teamPatchDone = true;      // 无论成败都只尝试一次，避免反复 hook
+                if (NativeTeamHook.Install(h))
+                    Plugin.L.LogInfo("[WulinTweaks] team condition hooked via dobby");
                 else
-                {
-                    Plugin.L.LogWarning("[WulinTweaks] team condition patch " + ok + "/" + TeamCondConnectNodes.Length
-                        + "; failed: " + failed);
-                    _teamPatchDone = ok > 0;
-                }
+                    Plugin.L.LogError("[WulinTweaks] dobby hook 失败，条件维持原版行为");
             }
             catch (Exception e) { Err("team condition", e); }
         }
@@ -467,23 +453,13 @@ namespace WulinTweaks
             return true;
         }
 
-        /// <summary>撤销队伍条件 patch，写回原始字节</summary>
+        /// <summary>
+        /// 已无操作：条件放宽改用 dobby 原生 hook，不再改写入口字节，
+        /// 「临时撤销再装回」这套机制已不需要（名单与固定名单由 TeamRule 直接判断）。
+        /// 保留空实现以免调用方改动。
+        /// </summary>
         internal static void RestoreTeamCondition()
         {
-            try
-            {
-                foreach (var s in _teamSaved)
-                {
-                    uint old;
-                    if (!VirtualProtect(s.Addr, (UIntPtr)5, 0x40, out old)) continue;
-                    Marshal.Copy(s.Orig, 0, s.Addr, 5);
-                    VirtualProtect(s.Addr, (UIntPtr)5, old, out _);
-                }
-                _teamSaved.Clear();
-                _teamPatchDone = false;
-                Plugin.L.LogInfo("[WulinTweaks] team condition restored");
-            }
-            catch (Exception e) { Err("team restore", e); }
         }
 
         /// <summary>熄灭所有已点亮的高亮（先清白名单，否则会被 prefix 又点亮）</summary>
