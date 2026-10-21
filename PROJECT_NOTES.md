@@ -77,13 +77,29 @@ PC 插件（`wulin-mod`）与手机 native（`wulin-apk`）实现同一套规则
 
 ---
 
-## 六、已知未解决
+## 六、最终实现（2026-10-21 定稿）
 
-`R10005-11`（苗彩蝶）的「需要伙伴」串在**剧情流程内部**（`判断存在标记.state → 需要伙伴`），
-不经过事件准入检查，PC 端目前无法拦截。
+PC 端改用 **dobby 原生 inline hook**（`BepInEx\core\dobby.dll`），接管：
 
-`IgnoreTeamConditionBlacklist = R10005-11` 已配置，但**对这类图不生效**——`ConditionRootGuard`
-和 `HoldBlacklistGuard` 都碰不到流程内部的节点。留着是因为将来若打通「流程执行层」会自动生效。
+```
+ConditionNode.CheckAllConnectNode（基类）       0x1105A00   ← 放宽时调它
+IsJoinedTeamCondition.CheckAllConnectNode      0x10F4CB0
+HavePartnerCondition.CheckAllConnectNode       0x10F2230
+```
 
-可考虑的方向：直接改游戏资源（`ModEditor.zip` 里的剧情图 asset），不依赖运行时 hook。
-前提是先确认游戏是从 bundle 还是从 zip 读取剧情图——**这一点尚未查证**。
+手机端 native inline hook，规则完全相同。
+
+### 不放宽的范围（只有三类）
+
+1. `R{角色id}-*` 图中，**partnerID == 图名角色 id 且该角色从未入队**（个人剧情等人入队）；
+2. 主线与师父线：`Fame-2`、`Guide10099-6/11/13/15/16/18`；
+3. 手动名单 `IgnoreTeamConditionBlacklist`（当前空）。
+
+其余一律放宽。
+
+### 必须守住的三个细节
+
+1. **判定缓存要带 TTL（3 秒）**——结果包含「是否从未入队」，入队状态会变；
+2. **`find_class(ns, name)` 的命名空间不能传错**——传错会静默返回 null
+   （`GameCharacterManager` 在 `WuLin` 命名空间下，此处曾出错导致三个版本空转）；
+3. **兜底不要静默**——`never_joined` 拿不到管理器时按「已入队」返回，正好掩盖了上述错误。
