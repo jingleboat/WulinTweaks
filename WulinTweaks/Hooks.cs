@@ -15,7 +15,6 @@ namespace WulinTweaks
         /// 递归探测「原版结果」时置位。名单 guard / 对比探针 / 诊断都会递归调用
         /// CheckCondition 本身，内层必须直接放行到原方法，否则无限套娃。
         /// </summary>
-        [ThreadStatic] internal static bool ProbingOrig;
 
         // ============ ① 场景高亮 ============
 
@@ -103,7 +102,6 @@ namespace WulinTweaks
                     ModKit.UnlockWorldMapTick();
                     Probe_CondNode.Report();
                     Probe_TeamState.Report();
-                    StoryCompare.ScanAllOnce();      // 放宽 vs 原版 全量对比（StoryCompare 开启时）
                 }
                 catch (Exception e) { ModKit.Err("hook mapLoaded", e); }
             }
@@ -367,7 +365,6 @@ namespace WulinTweaks
             static void Postfix(HoldNode __instance, bool __result)
             {
                 if (!Plugin.StoryDiag.Value) return;
-                if (Hooks.ProbingOrig) return;
                 try
                 {
                     // 条件构成：走纯原生内存读（SafeMem 先校验可读性），
@@ -402,37 +399,40 @@ namespace WulinTweaks
                 catch (Exception e) { ModKit.Err("diag hold", e); }
             }
         }
-        // ============ ⑤ 剧情：Hold 只放行一次（治「剧情反复触发」） ============
+        // ============ ⑤ 剧情：Hold 只放行一次（只对被放宽影响的 Hold 生效） ============
 
         /// <summary>
-        /// HoldNode.checkSucessTimes(0x70) 是游戏自己的「这个 Hold 已经成功过」标志：
-        /// addTimes() 置 1、clearTimes() 置 0。但 CheckCondition() 根本不读它
-        /// （0x3D9DEFC 反汇编：只遍历 conditionPort 调 CheckAllConnectNode），
-        /// 所以原版靠「条件为假」来实现一次性；我们把条件放宽成恒真之后，
-        /// times 已经变成 1 了、结果照样是 true，剧情于是反复触发。
+        /// 判据不再看"图名像不像角色剧情"，而是看**这次判定到底有没有碰队友条件**：
+        /// NativeTeamHook.TeamCondHits 在每次 IsJoinedTeam/HavePartner 判定时自增，
+        /// 所以「本次 CheckCondition 期间计数有没有变」= 这个 Hold 是否经由放宽才通过。
         ///
-        /// 实测（2026-10-20 诊断日志）：
-        ///   Hold "流程判断" 23CBAF07200  times=0 result=true   ← 第一次，该放行
-        ///   Hold "流程判断" 23CBAF07200  times=1 result=true   ← 之后还在放行 ← 问题在这
-        ///   Hold "流程判断" 23CB9BF1B00  times=1 result=false  ← 原版本来就会挡住的
-        /// 且所有记录 frameHits 都是 1，说明不是同帧空转（那条路径由 ContinueArrange 看门狗管）。
+        ///   - 计数没变 → 这个 Hold 与队友条件无关，一行都不碰（游戏设计的可重复剧情不受影响）；
+        ///   - 计数变了 + times != 0 + 这次仍然通过 → 是放宽把"一次性"变成了"可重复"
+        ///     → 压回 false，每个 Hold 只放行一次。
         ///
-        /// 对策：times 已经非 0 的 Hold，若这次仍被判为「可继续」，就压回 false ——
-        /// 每个 Hold 只可能因为放宽而通过一次。游戏若用 clearTimes() 重置成 0，
-        /// 之后还能再过一次，语义与原版一致。
+        /// 三条例外（交给原版语义，不做压制）：R{角色id}- 图、固定名单（主线/师父线）、手动名单。
+        /// —— 这些图的 Hold 由 TeamRule 在条件层就精确判定过，再压制会违背原版语义。
         /// </summary>
         [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
         internal static class HoldOnceGuard
         {
             private static int _warned;
 
-            static void Postfix(HoldNode __instance, ref bool __result)
+            static void Prefix(out int __state) { __state = NativeTeamHook.TeamCondHits; }
+
+            static void Postfix(HoldNode __instance, ref bool __result, int __state)
             {
                 try
                 {
                     if (!Plugin.IgnoreTeamCondition.Value) return;
                     if (!__result) return;
-                    if (__instance.checkSucessTimes == 0) return;   // 还没成功过：这次正常放行
+                    if (NativeTeamHook.TeamCondHits == __state) return;    // 本次没检查队友条件 → 不干预
+                    if (__instance.checkSucessTimes == 0) return;          // 还没成功过：正常放行
+
+                    string gn;
+                    try { gn = (__instance.graph == null) ? null : __instance.graph.name; } catch { gn = null; }
+                    if (!string.IsNullOrEmpty(gn) && TeamRule.IsProtectedGraph(gn))
+                        return;                                            // 例外：交给原版语义
 
                     __result = false;
 
@@ -441,90 +441,11 @@ namespace WulinTweaks
                         _warned++;
                         string nm;
                         try { nm = __instance.name; } catch { nm = "?"; }
-                        Plugin.L.LogInfo("[once] Hold \"" + nm + "\" times=" + __instance.checkSucessTimes
-                            + " 已经通过过，压制本次继续（避免剧情重复触发）");
+                        Plugin.L.LogInfo("[once] 剧情图 " + (gn ?? "?") + " 的 Hold \"" + nm + "\" times="
+                            + __instance.checkSucessTimes + " 已通过过，压制本次（放宽引起的重复触发）");
                     }
                 }
                 catch (Exception e) { ModKit.Err("guard hold once", e); }
-            }
-        }
-        // ============ ⑥ 剧情：非拦截名单（对这些剧情图不放宽） ============
-
-        /// <summary>
-        /// 有些剧情一旦条件恒真就会反复触发，或者玩家这会儿并不想触发它。
-        /// 名单是按**剧情图名**（NodeGraph.name，例如 R10028-7）匹配的 ——
-        /// 运行时从节点拿 graph：XNode.Node.graph 在 0x18，NodeGraph 是 ScriptableObject，
-        /// name 就是剧情图 ID。名单里的图，Hold 一律判为「不继续」，
-        /// 等价于恢复原版的严格判断（也就不用管它到底被哪条条件挡住了）。
-        ///
-        /// 已知对照（来自本地化表 json/3/LocData.txt 的 *_name 键）：
-        ///   R10028-7 = 一醉方休     R10025-6 = 杯中明镜
-        ///   R10112-2 = 烈酒与故事   R10005-11 = 苗彩蝶(uid 10005) 相关
-        /// </summary>
-        [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
-        internal static class HoldBlacklistGuard
-        {
-            // 重入保护：下面要递归调一次 CheckCondition（算「不放宽会怎样」），
-            // 内层必须直接放行到原方法。
-
-            private static readonly HashSet<string> _logged = new HashSet<string>();
-
-            static bool Prefix(HoldNode __instance, ref bool __result)
-            {
-                try
-                {
-                    if (Hooks.ProbingOrig) return true;
-                    if (!Plugin.IgnoreTeamCondition.Value) return true;
-
-                    string gn = GraphNameOf(__instance);
-                    if (string.IsNullOrEmpty(gn)) return true;
-                    if (!Plugin.IsStoryBlacklisted(gn)) return true;
-
-                    // 名单里的剧情图：**完全不放宽**，按原版条件判断。
-                    // 做法是把条件节点的机器码 patch 临时撤掉，跑一次真正的 CheckCondition，
-                    // 拿到「原版结果」再装回去。这样名单内的事件该怎么触发就怎么触发，
-                    // 不会因为插件放宽而多出本不该出现的触发。
-                    Hooks.ProbingOrig = true;
-                    bool orig;
-                    try
-                    {
-                        ModKit.RestoreTeamCondition();
-                        orig = __instance.CheckCondition();
-                    }
-                    catch (Exception e)
-                    {
-                        ModKit.Err("blacklist orig-check", e);
-                        orig = false;
-                    }
-                    finally
-                    {
-                        ModKit.ForceIgnoreTeamCondition();
-                        Hooks.ProbingOrig = false;
-                    }
-
-                    __result = orig;
-
-                    if (_logged.Add(gn))
-                        Plugin.L.LogInfo("[blacklist] 剧情图 " + gn + " 按原版判断（不放宽）→ "
-                            + (orig ? "通过" : "不通过"));
-                    return false;
-                }
-                catch (Exception e)
-                {
-                    ModKit.Err("guard blacklist", e);
-                    return true;
-                }
-            }
-
-            internal static string GraphNameOf(HoldNode node)
-            {
-                try
-                {
-                    var g = node.graph;              // XNode.Node.graph (0x18)
-                    if (g == null) return null;
-                    return g.name;                    // ScriptableObject.name = 剧情图 ID
-                }
-                catch { return null; }
             }
         }
         // ============ ⑦ 剧情条件构成探针（回答「是不是因为角色在队」）============
@@ -829,123 +750,5 @@ namespace WulinTweaks
                 catch (Exception e) { ModKit.Err("probe cond native", e); }
             }
         }
-        // ============ ⑨ 放宽 vs 原版 对比（回答「这个事件为什么被触发」）============
-
-        /// <summary>
-        /// 放宽只影响「队友是否在队 / 是否有伙伴」这一条，所以对任意 Hold：
-        ///   放宽通过 + 原版不通过  -> 就是被队友条件挡的（因角色在队）
-        ///   放宽通过 + 原版也通过  -> 全条件本来就满足
-        /// 原版结果靠临时撤掉条件 patch 再跑一次 CheckCondition 得到。
-        /// 一次读档就能把存档里已经触发的剧情全部归类。
-        /// </summary>
-        internal static class StoryCompare
-        {
-            private static readonly HashSet<IntPtr> _done = new HashSet<IntPtr>();
-
-            internal static bool OriginalResult(HoldNode node)
-            {
-                Hooks.ProbingOrig = true;
-                try
-                {
-                    ModKit.RestoreTeamCondition();
-                    return node.CheckCondition();
-                }
-                finally
-                {
-                    ModKit.ForceIgnoreTeamCondition();
-                    Hooks.ProbingOrig = false;
-                }
-            }
-
-            internal static void Report(HoldNode node, bool relaxed)
-            {
-                if (!Plugin.StoryCompare.Value) return;
-                if (Hooks.ProbingOrig) return;
-                if (node == null) return;
-
-                IntPtr p = node.Pointer;
-                if (p == IntPtr.Zero || !_done.Add(p)) return;   // 每个 Hold 只比一次
-
-                string gn;
-                try { gn = (node.graph == null) ? "?" : node.graph.name; } catch { gn = "?"; }
-
-                bool orig = OriginalResult(node);
-                LogResult(gn, relaxed, orig);
-            }
-
-            internal static void LogResult(string gn, bool relaxed, bool orig)
-            {
-                string why;
-                if (relaxed && !orig) why = "← 因队友条件（原版不满足）";
-                else if (relaxed && orig) why = "← 全条件本来就满足";
-                else if (!relaxed && orig) why = "← 原版满足但当前未通过";
-                else why = "← 两边都不通过";
-
-                Plugin.L.LogInfo("[compare] graph=" + gn
-                    + " 放宽=" + (relaxed ? "通过" : "不通过")
-                    + " 原版=" + (orig ? "通过" : "不通过")
-                    + "  " + why);
-            }
-
-            private static bool _scanned;
-
-            /// <summary>
-            /// 读档后把所有「已加载」的 HoldNode 主动扫一遍。
-            /// 被动捕获只覆盖被检查过的 Hold，已完成的剧情不会再被检查；
-            /// 这里主动拉一遍能补上不少（剧情图是 ScriptableObject，只有已加载的才在内存里）。
-            /// </summary>
-            internal static void ScanAllOnce()
-            {
-                if (!Plugin.StoryCompare.Value) return;
-                if (_scanned) return;
-                _scanned = true;
-
-                try
-                {
-                    var arr = Resources.FindObjectsOfTypeAll(Il2CppType.Of<HoldNode>());
-                    if (arr == null) { Plugin.L.LogInfo("[scan] FindObjectsOfTypeAll 返回 null"); return; }
-
-                    int total = arr.Length, hit = 0, teamOnly = 0, bothTrue = 0;
-                    for (int i = 0; i < total; i++)
-                    {
-                        HoldNode h = null;
-                        try { h = arr[i].TryCast<HoldNode>(); } catch { }
-                        if (h == null) continue;
-
-                        string gn;
-                        try { gn = (h.graph == null) ? "?" : h.graph.name; } catch { gn = "?"; }
-
-                        bool relaxed;
-                        Hooks.ProbingOrig = true;
-                        try { relaxed = h.CheckCondition(); }
-                        catch { relaxed = false; }
-                        finally { Hooks.ProbingOrig = false; }
-
-                        bool orig = OriginalResult(h);
-
-                        hit++;
-                        if (relaxed && !orig) teamOnly++;
-                        else if (relaxed && orig) bothTrue++;
-
-                        LogResult(gn, relaxed, orig);
-                    }
-                    Plugin.L.LogInfo("[scan] 扫描完成：Hold 实例 " + total + "，有效 " + hit
-                        + "，因队友条件 " + teamOnly + "，全条件满足 " + bothTrue);
-                }
-                catch (Exception e) { ModKit.Err("scan holds", e); }
-            }
-        }
-
-        [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
-        internal static class HoldComparePatch
-        {
-            static void Postfix(HoldNode __instance, bool __result)
-            {
-                if (Hooks.ProbingOrig) return;
-                try { StoryCompare.Report(__instance, __result); }
-                catch (Exception e) { ModKit.Err("compare", e); }
-            }
-        }
-
     }
 }

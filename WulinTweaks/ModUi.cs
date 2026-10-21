@@ -143,8 +143,8 @@ namespace WulinTweaks
             Row("忽略队伍角色条件", () => Plugin.IgnoreTeamCondition.Value, v =>
             {
                 Plugin.IgnoreTeamCondition.Value = v;
+                // 关闭时没有"还原机器码"的必要：dobby 的 hook 常驻，规则开关在 TeamRule 里实时读
                 if (v) ModKit.ForceIgnoreTeamCondition();
-                else ModKit.RestoreTeamCondition();
             });
 
             Header("[4] 易物");

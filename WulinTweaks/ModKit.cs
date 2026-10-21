@@ -457,11 +457,6 @@ namespace WulinTweaks
         /// 已无操作：条件放宽改用 dobby 原生 hook，不再改写入口字节，
         /// 「临时撤销再装回」这套机制已不需要（名单与固定名单由 TeamRule 直接判断）。
         /// 保留空实现以免调用方改动。
-        /// </summary>
-        internal static void RestoreTeamCondition()
-        {
-        }
-
         /// <summary>熄灭所有已点亮的高亮（先清白名单，否则会被 prefix 又点亮）</summary>
         internal static void ClearHighlights()
         {

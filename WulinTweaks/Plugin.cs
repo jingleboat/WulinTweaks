@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.9.2";   // 1.9.1 修「实例未创建→误放宽」；1.9.2 追加 Guide10099-1 进固定名单
+        public const string Version = "1.9.4";   // 1.9.4 清死代码 + Hold 压制改为「仅当本次判定真的碰过队友条件」
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -41,7 +41,6 @@ namespace WulinTweaks
 
         // 诊断（排查用，默认关）
         internal static ConfigEntry<bool> StoryDiag;
-        internal static ConfigEntry<bool> StoryCompare;
 
         internal static string DataDir;
 
@@ -91,10 +90,6 @@ namespace WulinTweaks
                 "【排查用】打印每个剧情 Hold 节点的条件检查结果、checkSucessTimes 和同帧重复次数。"
                 + "用来定位「跳过队友条件后剧情反复触发」，平时请保持关闭（开着会刷日志）");
 
-            StoryCompare = Config.Bind("5_Diag", "StoryCompare", false,
-                "【排查用】对每个 Hold 同时算「放宽后」和「原版」两个结果并对比，输出 [compare] 行。"
-                + "放宽通过但原版不通过 = 该事件是被「角色在队」这条条件放开的；两边都通过 = 全条件本来就满足。"
-                + "一次读档就能把已触发的剧情整体归类。会把条件 patch 临时撤销再装回，仅排查时开启");
 
             H = new Harmony(Guid);
 
@@ -130,14 +125,8 @@ namespace WulinTweaks
             // （名单内的图在 ⑥ 的 Prefix 里就返回了，不会走到这里的 Postfix。）
             SafePatch(typeof(Hooks.HoldOnceGuard), "HoldNode.CheckCondition");
 
-            // ⑥ 剧情：非拦截名单（名单里的剧情图不放宽）
-            SafePatch(typeof(Hooks.HoldBlacklistGuard), "HoldNode.CheckCondition");
 
-            // ⑦ 剧情：放宽 vs 原版 对比（只观测，StoryCompare 开关控制）
-            SafePatch(typeof(Hooks.HoldComparePatch), "HoldNode.CheckCondition");
 
-            // 探测：能否 patch StoryManager.CheckConditionFromRoot（条件检查总入口）
-            SafePatch(typeof(ConditionRootGuard), "StoryManager.CheckConditionFromRoot");
 
             L.LogInfo("[WulinTweaks] v" + Version + " loaded. data dir = " + DataDir);
         }

@@ -35,7 +35,24 @@ namespace WulinTweaks
             "Guide10099-1",                                     // 2026-10-21 追加：与 6/11/13… 同属师父线
             "Guide10099-6", "Guide10099-11", "Guide10099-13",
             "Guide10099-15", "Guide10099-16", "Guide10099-18",
+            // 2026-10-21 追加：烈酒与故事。图里 8 条「需要伙伴」全是别人的角色
+            // （10008/10009/10005/10015），按彩蛋规则会被放宽 → 剧情提前播出。
+            // 用户要求压回原版：那些角色不在队就不该演。
+            "R10112-2",
         };
+
+        /// <summary>
+        /// 该剧情图是否属于「不做 Hold 压制」的例外：
+        ///   R{角色id}- 图（条件层已由本规则精确判定）、固定名单、手动名单。
+        /// 与手机端 hook_hold_check 里的三条例外一一对应。
+        /// </summary>
+        internal static bool IsProtectedGraph(string gn)
+        {
+            if (string.IsNullOrEmpty(gn)) return false;
+            if (_rId.IsMatch(gn)) return true;
+            if (_fixed.Contains(gn)) return true;
+            try { return Plugin.IsStoryBlacklisted(gn); } catch { return false; }
+        }
 
         internal static string GraphNameOf(IntPtr condNode)
         {

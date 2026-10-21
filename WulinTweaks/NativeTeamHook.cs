@@ -39,6 +39,13 @@ namespace WulinTweaks
         private static bool _installed;
         private static int _calls;
 
+        /// <summary>
+        /// 每次「需要伙伴 / 有伙伴」条件判定 +1（按线程）。
+        /// HoldNode.CheckCondition 的 override 用它判断「这次判定到底有没有碰队友条件」——
+        /// 没碰就说明这个 Hold 与放宽无关，不该被压制（避免打断游戏设计的重复剧情）。
+        /// </summary>
+        [ThreadStatic] internal static int TeamCondHits;
+
         internal static bool IsInstalled => _installed;
 
         internal static bool Install(IntPtr moduleBase)
@@ -93,6 +100,7 @@ namespace WulinTweaks
 
         private static bool Dispatch(IntPtr self, int io, IntPtr line, CheckAllFn orig)
         {
+            TeamCondHits++;
             bool relax;
             try { relax = TeamRule.ShouldRelax(self); }
             catch { relax = true; }
