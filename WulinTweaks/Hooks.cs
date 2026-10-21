@@ -102,6 +102,7 @@ namespace WulinTweaks
                     ModKit.ForceHighlightNow();
                     ModKit.UnlockWorldMapTick();
                     Probe_CondNode.Report();
+                    Probe_TeamState.Report();
                     StoryCompare.ScanAllOnce();      // 放宽 vs 原版 全量对比（StoryCompare 开启时）
                 }
                 catch (Exception e) { ModKit.Err("hook mapLoaded", e); }
