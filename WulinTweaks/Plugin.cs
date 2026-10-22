@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.2";  // 1.11.2 清掉诊断探针；分支展开=通用规则；姓名改名提到 OnActive Prefix
+        public const string Version = "1.11.4";  // 1.11.4 易物池子副本改「合并进同类堆 + 数量记账」（不再跳过同类），搬空后自动并堆
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

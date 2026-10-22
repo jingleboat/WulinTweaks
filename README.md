@@ -171,13 +171,17 @@ GameCharacterInstance（运行时角色实例）
 3. 于是「易物换了一份，暗取还能再偷一份」这个漏洞被补上——原件少了，暗取就没货。
 
 > v1.0 只复制不扣池，`stealBackPack` 一个字节都不动，同一件能拿两次；**v1.1 起改为扣池**（`TradeKit.PoolDeduct`）。
+> **1.11.3 起搬运改走合并版 `AddItem`**（修同类物品被搬成多堆），**1.11.4 起池子副本改为合并进同类堆 + 数量记账**（不再跳过背包已有的同类，池子内容不遗漏）。
 
 三处细节值得说明：
 
-1. **副本按物品 id 记账**，记在 `BepInEx/config/WulinTweaks/trade-taken.txt`（键为 `TempleteUid:InstanceId:池:物品id`）。只有「副本真的被搬走」才记账；取消交易不记，所以下次还能看到。不记账的话每次开易物都会再造一份，等于无限复制。
-2. **扣池按差值算**：造副本时记下数量 `Stack0`，成交后副本剩余 `Stack`，差值就是玩家实际拿走的数量，只扣这么多——玩家只取一部分时，池子里剩下的还在。
-3. **副本在交易结束时清掉**：取消走 `CleanupCopies`，成交走搬空后的统一清理；异常关闭的残留由下次 `StartTrading` 的 Prefix 兜底。
-4. **搬物品必须新建实例**。`GameItemPack.RemoveItem` 会就地做 `gii.Stack -= count`，而 `AddItem` / `AddItemAsIndependent` 以 `Stack > 0` 为前置条件。把同一个实例「加进目标包、再从源包删掉」会让两边都变成 `Stack == 0` 的空壳——表现为「源包清了、目标包什么都没有」。所以搬运一律 `new GameItemInstance(id, stack)` 进目标包，再删原件。
+1. **副本按物品 id 记账**，记在 `BepInEx/config/WulinTweaks/trade-taken.txt`（键为 `TempleteUid:InstanceId:池:物品id`）。只有「池子里这件被扣干」才记账（模板条目没有实物可扣，仍一次记掉）；取消交易不记，所以下次还能看到。不记账的话每次开易物都会再造一份，等于无限复制。
+2. **扣池按差值算**：造副本时记下数量 `Stack0`，成交后副本剩余 `Stack`，差值就是玩家实际拿走的数量，只扣这么多——玩家只取一部分时，池子里剩下的还在，下次开面板会把剩下的再补上。
+3. **副本有两种形态**：`npc.BackPack` 里**没有**同 ID 的堆 → 独立实例（按实例删、按 `Stack` 差记账）；**已有**同 ID 的堆 → 合并进那一堆（按数量删、按 `(原数量+副本量)−剩余` 记账，撤副本时只撤我们加的部分，绝不碰 NPC 原货）。合并形态是为了让池子里的东西不因为「背包已有同类」而从易物面板漏掉，同时面板不会出现两个同 ID 堆。
+4. **副本在交易结束时清掉**：取消走 `CleanupCopies`，成交走搬空后的统一清理；异常关闭的残留由下次 `StartTrading` 的 Prefix 兜底。开面板与搬空后还会各跑一次 `MergeDupPiles`，把老存档里已被拆开的同类堆并回一堆。
+5. **搬物品必须新建实例**。`GameItemPack.RemoveItem` 会就地做 `gii.Stack -= count`，而 `AddItem` / `AddItemAsIndependent` 以 `Stack > 0` 为前置条件。把同一个实例「加进目标包、再从源包删掉」会让两边都变成 `Stack == 0` 的空壳——表现为「源包清了、目标包什么都没有」。所以搬运一律 `new GameItemInstance(id, stack, 0)` 进目标包，再删原件。
+6. **搬运必须用 `AddItem`，不能用 `AddItemAsIndependent`**。反汇编 `GameItemPack`：`AddItem` 对可堆叠物品会遍历 `Contents` 找同 `ItemData` 的堆并 `m_stack += count`（合并），而 `AddItemAsIndependent` 只做 `Contents.Add`（永不合并）。用后者搬几次就是几堆——这就是「易物搬空后队伍背包里金疮药分三四堆」的根因（1.11.3 修）。`AddItemAsIndependent` 只留给「背包里没有同类、必须按实例删掉的显示副本」。
+7. **克隆的 `craftLevel` 必须传 `0`**。`GameItemInstance..ctor(id, stack, craftLevel)` 在 `craftLevel != 0` 时会调 `CreateForgeModify` 给可锻造装备滚一份随机附加属性（`IsStackable` 也靠 `modifyData == null` 判定）。原件本来就带 `ItemModifyData` 就直接共用同一份。
 
 ---
 
