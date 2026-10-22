@@ -164,15 +164,11 @@ namespace WulinTweaks
                 byte* p = (byte*)self;
                 int pid = *(int*)(p + OFF_PARTNER_ID_PC);
                 bool neg = *(byte*)(p + OFF_PARTNER_NEGATE_PC) != 0;
-                if (_relaxLog++ < 30)
-                    Plugin.L.LogInfo("[name] 放宽候选 pid=" + pid + " neg=" + neg);
                 if (pid <= 0 || neg) return;
                 RelaxName.MarkRelaxed(pid, TeamRule.GraphNameOf(self));
             }
             catch { }
         }
-
-        private static int _relaxLog;
 
     }
 }

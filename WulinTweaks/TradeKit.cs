@@ -654,12 +654,13 @@ namespace WulinTweaks
         /// <summary>
         /// ConfirmTrading 之后：把交易区残留 + NPC 背包剩余全部搬进队伍背包。
         /// 玩家交易区的东西也一并退回，等于玩家不付出任何东西。
+        /// 1.11.5 起跟随「作价恒占优」（TradeAlwaysWin），不再是独立开关。
         /// </summary>
         internal static void AfterConfirm()
         {
             try
             {
-                if (!Plugin.TradeTakeAll.Value) { CleanupCopies(); return; }
+                if (!Plugin.TradeAlwaysWin.Value) { CleanupCopies(); return; }
 
                 var inv = TeamInventory();
                 if (!Truthy(inv))

@@ -49,11 +49,7 @@ namespace WulinTweaks
                 try { real = inst.RealFullName; }
                 finally { _busy = false; }
 
-                if (!string.IsNullOrWhiteSpace(real))
-                {
-                    if (_logs++ < 20) Plugin.L.LogInfo("[name] uid=" + uid + " 显示熟悉的姓名");
-                    result = real;
-                }
+                if (!string.IsNullOrWhiteSpace(real)) result = real;
             }
             catch (Exception e)
             {

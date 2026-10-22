@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.4";  // 1.11.4 易物池子副本改「合并进同类堆 + 数量记账」（不再跳过同类），搬空后自动并堆
+        public const string Version = "1.11.10";  // 1.11.10 固定名单只保留 R20004-6（Fame-6 撤销）；清掉逐次判定/取名的诊断日志
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -33,10 +33,10 @@ namespace WulinTweaks
         internal static ConfigEntry<string> StoryBlacklist;
 
         // ④ 易物
-        // 全部默认关闭；面板上改动会立即写进 cfg，下次启动沿用上次状态
+        // 默认全关；面板上改动会立即写进 cfg，下次启动沿用上次状态。
+        // 「确认搬空」不是独立开关：它跟随 TradeAlwaysWin（作价恒占优）—— 打开后成交即搬空。
         internal static ConfigEntry<bool> TradeAlwaysWin;
         internal static ConfigEntry<bool> TradePools;
-        internal static ConfigEntry<bool> TradeTakeAll;
 
         // UI
         internal static ConfigEntry<string> UiToggleKey;
@@ -88,15 +88,15 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
                 + "R10028-7=一醉方休，R10025-6=杯中明镜，R10112-2=烈酒与故事（需要时自行加上）");
 
             TradeAlwaysWin = Config.Bind("4_Trade", "AlwaysWin", false,
-                "易物时玩家方作价永远 >= NPC 方，NPC 一律接受；"
-                + "同时让玩家交易区为空也能确认成交");
+                "易物「通吃」总开关：玩家方作价永远 >= NPC 方，NPC 一律接受；"
+                + "玩家交易区为空也能确认成交；"
+                + "并且点确认成交后，把交易区残留和 NPC 背包剩下的东西一起塞进队伍背包 —— "
+                + "NPC 的东西全拿走，玩家不用付出任何东西。"
+                + "（1.11.5 起「确认搬空」跟随本开关，不再单独提供）");
             TradePools = Config.Bind("4_Trade", "Pools", false,
                 "易物 NPC 侧同时列出「击杀必掉物」与「暗取池」的内容。"
                 + "只往 NPC 背包放一份仅供显示的副本，两个池子本身一个字节都不动 —— "
                 + "不会改变暗取能偷到什么，也不会改变打死掉什么");
-            TradeTakeAll = Config.Bind("4_Trade", "TakeAllOnConfirm", false,
-                "点确认成交后，把交易区残留和 NPC 背包剩下的东西一起塞进队伍背包 —— "
-                + "NPC 的东西全拿走，玩家不用付出任何东西");
 
             UiToggleKey = Config.Bind("0_UI", "ToggleKey", "BackQuote",
                 "打开/关闭面板的热键（Unity KeyCode 名称：BackQuote=` / F9 / Insert / Home …）");

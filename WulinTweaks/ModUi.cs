@@ -126,7 +126,7 @@ namespace WulinTweaks
             fitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
 
             Header("[1] 场景高亮");
-            Row("可交互物常亮", () => Plugin.AlwaysHighlight.Value, v =>
+            Row("可交互物件常亮（含可拾取物）", () => Plugin.AlwaysHighlight.Value, v =>
             {
                 Plugin.AlwaysHighlight.Value = v;
                 if (v) ModKit.ForceHighlightNow();
@@ -158,9 +158,8 @@ namespace WulinTweaks
                 v => Plugin.TradeAlwaysWin.Value = v);
             Row("列出必掉物＋暗取池", () => Plugin.TradePools.Value,
                 v => Plugin.TradePools.Value = v);
-            Row("确认时搬空 NPC", () => Plugin.TradeTakeAll.Value,
-                v => Plugin.TradeTakeAll.Value = v);
 
+            Footer("易物只有两个开关：打开「作价恒占优」即含确认搬空 NPC");
             Footer("热键 " + Plugin.UiToggleKey.Value + " · 滚轮翻页");
 
             Relayout();
