@@ -146,6 +146,12 @@ namespace WulinTweaks
                 // 关闭时没有"还原机器码"的必要：dobby 的 hook 常驻，规则开关在 TeamRule 里实时读
                 if (v) ModKit.ForceIgnoreTeamCondition();
             });
+            Row("剧情分支展开（顺序播放）", () => Plugin.FlattenBranches.Value, v =>
+            {
+                Plugin.FlattenBranches.Value = v;
+                Plugin.L.LogInfo("[flat] 开关 -> " + (v ? "开" : "关")
+                                 + "（已经展开过的图不会复原，彻底还原请重启游戏）");
+            });
 
             Header("[4] 易物");
             Row("作价恒占优（空手也能成交）", () => Plugin.TradeAlwaysWin.Value,

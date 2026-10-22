@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.9.5";   // 1.9.5 「伙伴邀请或离队」容错：remove 找不到人（按 id 不在队 / 按位置越界）视为已成功，避免剧情卡死
+        public const string Version = "1.10.4";  // 1.10.4 姓名窗口改事件驱动：StoryCloseNode 收尾 + 空闲 30s，不再用短宽限
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -28,6 +28,7 @@ namespace WulinTweaks
 
         // ③ 剧情
         internal static ConfigEntry<bool> IgnoreTeamCondition;
+        internal static ConfigEntry<bool> FlattenBranches;
         internal static ConfigEntry<string> StoryBlacklist;
 
         // ④ 易物
@@ -64,6 +65,13 @@ namespace WulinTweaks
 
             IgnoreTeamCondition = Config.Bind("3_Story", "IgnoreTeamMemberCondition", false,
                 "剧情触发时忽略「队伍中是否存在某角色」条件");
+
+            FlattenBranches = Config.Bind("3_Story", "FlattenBranches", true,
+                "剧情分支展开：把「某角色是否在队」的互补分支由 if/else 改成**顺序播放** —— "
+                + "先播队内有该角色的那几段，再播队内没有时的兜底，最后汇合。"
+                + "目前只处理 R10049-2（大梁城衙门铡刀那段五人讲解）。"
+                + "和「忽略队伍角色条件」是两个独立开关：这个只改剧情的走线，不改变条件判定规则。"
+                + "⚠️ 关掉不会复原已经展开过的图（出边已经改过），要彻底还原请重启游戏。");
 
             StoryBlacklist = Config.Bind("3_Story", "IgnoreTeamConditionBlacklist", "R10005-11",
                 "「只触发一次」的剧情图名单（逗号分隔；按前缀匹配就在末尾加 *，例如 R10005-*）。"
@@ -125,8 +133,23 @@ namespace WulinTweaks
             // （名单内的图在 ⑥ 的 Prefix 里就返回了，不会走到这里的 Postfix。）
             SafePatch(typeof(Hooks.HoldOnceGuard), "HoldNode.CheckCondition");
 
+            // ⑦ 剧情：伙伴离队容错（这个类 v1.9.5 就写好了，但**从来没被注册进补丁列表** —— v1.9.8 补上）
+            SafePatch(typeof(Patch_ChangePartner), "ChangePartnerNode.OnResult(离队容错)");
 
+            // ⑧ 剧情：显示「熟悉后姓名」三层（v1.9.8；1.9.6 的 Patch_RealName 同样从未注册过）
+            SafePatch(typeof(Patch_RealNameStrangerFlag), "GameCharacterInstance.IsUsingStangerName(状态层)");
+            SafePatch(typeof(Patch_RealNameFull), "GameCharacterInstance.FullName(兜底)");
+            SafePatch(typeof(Patch_RealNameTitle), "GameCharacterInstance.FullNameWithTitle(兜底)");
 
+            // ⑨ 剧情播放起止（v1.9.9：名字切换只在播放期间、且只作用于当前图）
+            SafePatch(typeof(Patch_StoryPlayBegin), "StoryScenarioNode.OnActive(播放开始)");
+            SafePatch(typeof(Patch_StoryPlayEnd), "StoryScenarioNode.Continue(播放结束)");
+
+            // ⑩ 剧情分支展开：被接管的门无条件判真（v1.10.0）
+                        SafePatch(typeof(Patch_FlattenGate), "HoldNode.CheckCondition(分支展开的门)");
+
+            // ⑪ 剧情收尾：StoryCloseNode 执行结果时还原姓名（v1.10.4 的事件驱动窗口终点）
+            SafePatch(typeof(Patch_StoryClose), "StoryCloseNode.OnResult(剧情收尾)");
 
             L.LogInfo("[WulinTweaks] v" + Version + " loaded. data dir = " + DataDir);
         }

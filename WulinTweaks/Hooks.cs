@@ -102,6 +102,8 @@ namespace WulinTweaks
                     ModKit.UnlockWorldMapTick();
                     Probe_CondNode.Report();
                     Probe_TeamState.Report();
+                    // v1.10.4：换图/读档后把姓名窗口收干净（剧情里换图的场景，下一节点会重新开）
+                    RelaxName.EndNow();
                 }
                 catch (Exception e) { ModKit.Err("hook mapLoaded", e); }
             }
@@ -503,7 +505,8 @@ namespace WulinTweaks
                     if (cls == IntPtr.Zero || !SafeMem.Readable(cls, 0x10)) return "?";
                     var p = _clsGetName(cls);
                     if (p == IntPtr.Zero || !SafeMem.Readable(p, 1)) return "?";
-                    return System.Runtime.InteropServices.Marshal.PtrToStringAnsi(p, 96);
+                    // 不定长读法：定长版会把结尾 \0 和后面的内存一起读进来
+                    return System.Runtime.InteropServices.Marshal.PtrToStringAnsi(p);
                 }
                 catch { return "?"; }
             }
@@ -564,8 +567,9 @@ namespace WulinTweaks
                         {
                             try
                             {
-                                int pid = System.Runtime.InteropServices.Marshal.ReadInt32(p, 0x58);
-                                bool neg = System.Runtime.InteropServices.Marshal.ReadByte(p, 0x5C) != 0;
+                                // 同样是运行期解析（PC 是 0x48/0x4C，不是手机端的 0x58/0x5C）
+                                int pid = Il2CppNative.Int32(p, "partnerID");
+                                bool neg = Il2CppNative.Byte(p, "Negate") != 0;
                                 extra = "  partnerID=" + pid + " Negate=" + (neg ? "true" : "false");
                             }
                             catch { }
@@ -740,8 +744,11 @@ namespace WulinTweaks
                         string extra = "";
                         if (cls != null && (cls.Contains("JoinedTeam") || cls.Contains("HavePartner")))
                         {
-                            int pid = SafeMem.Int32(cn, 0x58);
-                            bool neg = SafeMem.Byte(cn, 0x5C) != 0;
+                            // 2026-10-23：原来这里写的是手机端的 0x58/0x5C，PC 实际是 0x48/0x4C
+                            // （见 NativeTeamHook.OFF_PARTNER_ID_PC），而且布局可能随版本变 →
+                            // 改成走 Il2CppNative 在运行期解析字段偏移，不再靠猜。
+                            int pid = Il2CppNative.Int32(cn, "partnerID");
+                            bool neg = Il2CppNative.Byte(cn, "Negate") != 0;
                             extra = "  partnerID=" + pid + " Negate=" + (neg ? "true" : "false");
                         }
                         Plugin.L.LogInfo("    - " + cls + extra);

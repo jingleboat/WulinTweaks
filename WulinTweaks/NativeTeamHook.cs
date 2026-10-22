@@ -46,6 +46,22 @@ namespace WulinTweaks
         /// </summary>
         [ThreadStatic] internal static int TeamCondHits;
 
+        /// <summary>v1.9.8：名字窗口改由 RelaxName 按 uid 维护，这里只保留一个「最后命中」便于日志。</summary>
+        internal static int LastRelaxedPid;
+
+        /// <summary>
+        /// v1.9.6：最近一次「放宽放过了谁」+ 窗口截止时间（TickCount64 毫秒）。
+        /// 供 Patch_RealName 在剧情期间把该角色显示成「熟悉后姓名」。
+        /// 只记录 Negate=0 那一侧（"要求某人在队"）被放宽的情况。
+        /// </summary>
+
+
+
+
+        // PC 版 ConditionNode(IsJoinedTeam/HavePartner).partnerID = 0x48（手机是 0x58）
+        private const int OFF_PARTNER_ID_PC = 0x48;
+        private const int OFF_PARTNER_NEGATE_PC = 0x4C;
+
         internal static bool IsInstalled => _installed;
 
         internal static bool Install(IntPtr moduleBase)
@@ -101,6 +117,13 @@ namespace WulinTweaks
         private static bool Dispatch(IntPtr self, int io, IntPtr line, CheckAllFn orig)
         {
             TeamCondHits++;
+            RelaxName.MaybeSync();   // v1.9.9：探测「剧情播放中」状态翻转
+
+            // v1.10.0：剧情分支展开 —— 顺手在目标图上套补丁（除首次命中，其余只是一次哈希查找）。
+            // 门的「无条件判真」不在这里做：PC 版认不出 conditionPort 连着的条件节点
+            // （那个 ConditionPort 是空壳），改成按门指针判断，见 Patch_FlattenGate。
+            try { BranchFlatten.Try(self); } catch { }
+
             bool relax;
             try { relax = TeamRule.ShouldRelax(self); }
             catch { relax = true; }
@@ -120,6 +143,7 @@ namespace WulinTweaks
             // 放宽：走基类实现（与手机端 base_check_all 一致）
             try
             {
+                MarkRelaxed(self);
                 var baseFn = Marshal.GetDelegateForFunctionPointer<CheckAllFn>(_baseCheck);
                 return baseFn(self, io, line);
             }
@@ -129,5 +153,28 @@ namespace WulinTweaks
                 return true;
             }
         }
+
+        /// <summary>
+        /// v1.9.8：改为「每个 uid 一个窗口」—— 见 RelaxName 的注释。
+        /// 1.9.6 的单个全局 LastRelaxedPid 会被反复重判的门对钉死，别的角色永远轮不到。
+        /// </summary>
+        private static unsafe void MarkRelaxed(IntPtr self)
+        {
+            try
+            {
+                if (self == IntPtr.Zero) return;
+                byte* p = (byte*)self;
+                int pid = *(int*)(p + OFF_PARTNER_ID_PC);
+                bool neg = *(byte*)(p + OFF_PARTNER_NEGATE_PC) != 0;
+                if (_relaxLog++ < 30)
+                    Plugin.L.LogInfo("[name] 放宽候选 pid=" + pid + " neg=" + neg);
+                if (pid <= 0 || neg) return;
+                RelaxName.MarkRelaxed(pid, TeamRule.GraphNameOf(self));
+            }
+            catch { }
+        }
+
+        private static int _relaxLog;
+        private static int _flatLog;
     }
 }
