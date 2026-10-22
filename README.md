@@ -24,6 +24,52 @@
 
 ---
 
+## 剧情分支展开（通用规则）
+
+原版剧情图里「某角色是否在队」的条件是**互补门对**（`Negate=0` / `Negate=1`），引擎按顺序问、
+第一个满足的就被走 —— 也就是 if/else；讲解类剧情的出口直接连到汇合点，所以另一侧永远不播。
+
+展开规则一句话：**把「在队侧」的出口改接到「不在队侧那道门」，再让两道门都判真。**
+
+```
+region = reach(G0) − reach(G1) − {G0, G1}     # 只有在队侧能到的节点 = 该侧独占内容
+exits  = region 内指向 region 外的边（已指向 G1 的除外）
+动作    = exits 全部改指 G1；G0、G1 在 HoldNode.CheckCondition 上判真
+```
+
+- **A 类**（一侧播放剧情 / 一侧直通）→ 变成梯子顺序展开
+- **B 类**（两侧都是播放剧情）→ 先播在队那段，再播不在队那段
+- 跳过：`region` 为空 / 过大 / 无对外出口、与另一对门的区域相交（嵌套门对）、
+  `partnerID <= 0`、两侧都不是单节点剧情的 X 类
+- 想排除某张图：配置项 `3_Story / FlattenBlacklist`（逗号分隔，支持 `*` 前缀）
+
+离线预演（改代码前先看会怎么改）：
+
+```powershell
+python tools/scan_flattenable.py --json out.json      # 全量：哪些图有可展开门对
+python tools/simulate_flatten.py --only R10049-2 --detail   # 单图：逐条列出会改哪些边
+```
+
+全量结果（1641 张剧情图）：692 张含门对，A 类 108 张可安全展开；A+B 199 张。
+
+## 剧情期间显真名
+
+对话期间把出场角色从「陌生时姓名」（`@冷峻严肃的中年人`）换成本地拼的真名 ——
+落点是**角色实例的 `m_surName` / `m_givenName`**（显示层既不读 `FullName` 也不读模板）。
+
+窗口是事件驱动的：
+
+| 时机 | 动作 |
+|---|---|
+| `StoryScenarioNode.OnActive`（**Prefix**） | 开窗并改写姓名；必须在原函数之前，否则气泡先用陌生名渲染一遍 |
+| `StoryScenarioNode.Continue` | 只续期（实测节点间空档 1.8~19 秒，用短宽限判断"播完了"必然误还原） |
+| `StoryCloseNode.OnResult`（`GraphName` 匹配） | 立刻还原 |
+| `MapManager.OnLoadMapComplated` | 立刻还原（换图/读档兜底） |
+| 播放期间每 500ms | 复查一次（游戏自己把名字写回去时会改回来） |
+
+---
+
+
 ## ⚠️ 一个会关掉柳月樱线的坑
 
 > **无名渡口与富商对话，剧情条件放宽会和诸葛神机前往海蛟帮，会变为「海蛟帮贵客」，导致柳月樱事件关闭。**
@@ -204,6 +250,20 @@ GameCharacterInstance（运行时角色实例）
 `5_Diag / StoryDiagnostics`（默认 `false`）会把每个 `Hold` 的条件检查结果、
 `checkSucessTimes`、同帧重复次数写进日志（带采样：每个 Hold 前 5 次 + 之后每 50 次，
 同帧重复 ≥5 次的一律记录），不会刷屏。只在排查剧情问题时打开。
+
+---
+
+## 工具（`tools/`）
+
+| 脚本 | 用途 |
+|---|---|
+| `inspect_story_pc.py` | 读 `ModEditor.zip` 里的剧情图 YAML：核对展开规格、打印门梯、按 `partnerID` 查角色 |
+| `scan_flattenable.py` | 全量扫描全部剧情图，按 A/B 类门对筛出「能展开哪些图」，`--detail` 直接吐参数表 |
+| `simulate_flatten.py` | 通用规则离线模拟：列出会改哪些边、region 大小、风险（重叠/无出口/成环/终点丢失） |
+| `mkmap.py` | 从 Il2CppDumper 的 `dump.cs` 生成 RVA → `Namespace.Type::Method` 映射 |
+| `x64dis.py` | 按 RVA 反汇编 `GameAssembly.dll`（带符号注释） |
+| `offscan.py` | 扫 PE 里 `[reg+disp32]` 访问某个结构体偏移的指令，定位读该字段的函数 |
+| `autodeploy.ps1` | 等游戏退出后把 `bin\Release\WulinTweaks.dll` 拷到插件目录 |
 
 ---
 

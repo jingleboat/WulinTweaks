@@ -46,8 +46,6 @@ namespace WulinTweaks
         /// </summary>
         [ThreadStatic] internal static int TeamCondHits;
 
-        /// <summary>v1.9.8：名字窗口改由 RelaxName 按 uid 维护，这里只保留一个「最后命中」便于日志。</summary>
-        internal static int LastRelaxedPid;
 
         /// <summary>
         /// v1.9.6：最近一次「放宽放过了谁」+ 窗口截止时间（TickCount64 毫秒）。
@@ -175,6 +173,6 @@ namespace WulinTweaks
         }
 
         private static int _relaxLog;
-        private static int _flatLog;
+
     }
 }

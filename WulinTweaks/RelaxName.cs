@@ -49,7 +49,7 @@ namespace WulinTweaks
         private static long _playUntil;
         private static int _playState;
         private static long _lastSync;
-        private static int _logs;
+        private static int _logBegin, _logRename, _logRestore, _logWarn, _logRewrite;
 
         private static long Now => Environment.TickCount64;
 
@@ -96,7 +96,7 @@ namespace WulinTweaks
                 if (!string.IsNullOrEmpty(graph)) s.Graph = graph;
                 s.Until = Now + WinMs;
             }
-            catch (Exception e) { if (_logs++ < 5) Plugin.L.LogWarning("[name] mark 异常: " + e.Message); }
+            catch (Exception e) { if (_logWarn++ < 10) Plugin.L.LogWarning("[name] mark 异常: " + e.Message); }
         }
 
         internal static void PlayBegin(string graph)
@@ -107,7 +107,7 @@ namespace WulinTweaks
             _playState = 1;
             _lastSync = Now;
             _lastApply = Now;
-            if (_logs++ < 20) Plugin.L.LogInfo("[name] 开始播放剧情 graph=" + (graph ?? "?") + " → 只改这张图的角色");
+            if (_logBegin++ < 20) Plugin.L.LogInfo("[name] 开始播放剧情 graph=" + (graph ?? "?") + " → 只改这张图的角色");
             Sync();
         }
 
@@ -221,23 +221,30 @@ namespace WulinTweaks
                 {
                     s.OrigSur = curSur;
                     s.OrigGiven = curGiven;
-                    if (_logs++ < 30)
+                    if (_logRename++ < 80)
                         Plugin.L.LogInfo("[name] uid=" + s.Uid + " 实例原名 姓=\"" + (s.OrigSur ?? "")
                                          + "\" 名=\"" + (s.OrigGiven ?? "") + "\"");
                 }
                 s.InstPatched = true;
             }
 
+            // 已经改过、但当前值又不是我们的 → 游戏自己把名字写回去了，这里补一刀。
+            // 这条日志很重要：首句"先闪陌生名"通常就是这一刀晚了一步（见 Patch_StoryPlayBegin.Prefix）。
+            bool rewrite = s.InstPatched && s.Inst == inst && !curIsOurs && s.HasOrig;
+            if (rewrite && _logRewrite++ < 40)
+                Plugin.L.LogInfo("[name] uid=" + s.Uid + " 游戏把名字改回去了（当前名=\"" + (curGiven ?? "")
+                                 + "\"），重新改写");
+
             try
             {
                 inst.m_surName = sur;
                 inst.m_givenName = given;
-                if (_logs++ < 30)
+                if (!rewrite && _logRename++ < 80)
                     Plugin.L.LogInfo("[name] uid=" + s.Uid + " 实例改名 -> \"" + (sur ?? "") + (given ?? "") + "\"");
             }
             catch (Exception e)
             {
-                if (_logs++ < 10) Plugin.L.LogWarning("[name] uid=" + s.Uid + " 写实例姓名失败: " + e.Message);
+                if (_logWarn++ < 10) Plugin.L.LogWarning("[name] uid=" + s.Uid + " 写实例姓名失败: " + e.Message);
             }
         }
 
@@ -299,7 +306,7 @@ namespace WulinTweaks
                         }
                     }
                     catch { }
-                    if (_logs++ < 30) Plugin.L.LogInfo("[name] uid=" + s.Uid + " 姓名已还原");
+                    if (_logRestore++ < 40) Plugin.L.LogInfo("[name] uid=" + s.Uid + " 姓名已还原");
                 }
                 s.InstPatched = false;
                 s.HasOrig = false;

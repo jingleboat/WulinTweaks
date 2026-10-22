@@ -4,88 +4,61 @@ using System.Collections.Generic;
 namespace WulinTweaks
 {
     /// <summary>
-    /// 剧情分支展开（Branch Flattener）—— PC 版，与手机端 v69~v79 的 flatten.cpp 同一套语义。
+    /// 剧情分支展开（Branch Flattener）v2 —— **通用规则**，不再针对某一张图。
     ///
-    /// === 它做什么 ===
-    /// 原版剧情图里「某角色是否在队」的条件是**互补兄弟对**（Negate=0 / Negate=1），
-    /// 引擎语义是「按顺序问，第一个满足的就被走，后面的不再问」，也就是 if/else。
-    /// 而讲解类剧情的出口直接连到汇合点，所以第一个命中的分支一播完就推进主线，
-    /// 另一侧永远不播。
+    /// === 规则（一句话）===
+    /// 把「在队侧（Negate=0）」的**出口**改接到「不在队侧那道门（Negate=1）」，
+    /// 再让两道门都判真 —— 于是先播在队侧的内容，接着播不在队侧的内容。
     ///
-    /// 这里把讲解链的出口改接到「下一段讲解的门」上，于是变成**顺序播放**：
-    /// 先播「队内有该角色」的剧情，一路串下去，最后落到原版「无伙伴」那条兜底，再汇合收尾。
+    /// === 为什么成立 ===
+    /// 一对门的父节点出边是 `[G0(Negate=0), G1(Negate=1)]`，引擎按顺序问、
+    /// 第一个满足的就被走；两道都真时永远走 G0。所以只要把「G0 分支走完之后
+    /// 指向外面那条边」改成指向 G1，就等于在 G0 的内容后面接上 G1 侧的内容，
+    /// 而 **G1 侧原样保留**（它连着的是一对门还是汇合点都无所谓）。
     ///
-    /// === PC 与手机端的实现差别（重要，别再走回头路）===
-    /// 手机端是「找到每个门挂着的条件节点，把那个条件判真」。PC 上一度照抄，结果卡死在
-    /// `HoldNode.conditionPort` 上：
+    /// 这对两种形状同时成立：
+    ///   · A 类：一侧「播放剧情」/ 一侧「直通」 —— 改完就变成梯子顺序展开
+    ///   · B 类：两侧都是「播放剧情」 —— 改完变成"先播 A 侧、再播 B 侧"
     ///
-    ///   [flat:gate] 门类=HoldNode 端口类=ConditionPort  connections字段=无
-    ///               get_Connection=无  GetConnections=无
+    /// === 内容区域怎么界定 ===
+    /// 不取"第 1 条出边"，而是按可达性算：
+    ///     region = reach(G0) − reach(G1) − {G0, G1}
+    /// 也就是**只有在队侧能到、不在队侧到不了**的节点 = 这一侧的独占内容。
+    /// 这样多节点剧情、剧情内部自带分支都能覆盖，而汇合点和之后的流程天然被排除。
+    ///     exits = region 内所有指向 region 外的边（已指向 G1 的除外）
+    ///     动作  = exits 全部改指 G1；G0、G1 都判真
     ///
-    /// 也就是说 PC 版这个 `ConditionPort` 对象是个**空壳**（il2cpp 里只有 .ctor，
-    /// 无字段无方法），根本不是真正的 NodePort，从它出发永远走不到条件节点。
+    /// === 跳过条件（宁可不动，也不要改坏）===
+    /// · region 为空（两侧内容重叠）：本来就不需要改
+    /// · region 太大（> 512）：认不出边界，跳过
+    /// · region 没有对外出口（内容自环）：跳过
+    /// · 与另一对门的 region 相交（嵌套门对）：两对都跳过，留给人工
     ///
-    /// 所以 PC 版改成**完全结构化的路线**：
-    ///   ① 认门：从起点沿 `OutPort.connections[1]` 走 5 步，一路收集 10 个门，
-    ///      第 5 步落点就是「无伙伴」兜底门 —— 与手机端 FLAT_WALK_STEPS 的做法一致，
-    ///      完全不碰 conditionPort、也不需要读 partnerID；
-    ///   ② 接管：把认出来的门登记进 _gateForced，由 `HoldNode.CheckCondition` 的
-    ///      Postfix 直接判真（见 Patch_FlattenGate）。
-    ///
-    /// 实测结构（PC 的 R10049-2.asset 核对过，380 节点）：
-    ///   _2_1 ─┬→ 门84N0 → _2_2 → _2_9
-    ///         └→ 门84N1 ─┬→ 门83N0 → _2_3 → _2_9
-    ///                     └→ 门83N1 ─┬→ 门78N0 → _2_4 → _2_9
-    ///                                 └→ 门78N1 ─┬→ 门53N0 → _2_5 → _2_9
-    ///                                             └→ 门53N1 ─┬→ 门08N0 → _2_6 → _2_9
-    ///                                                         └→ 门08N1 ─┬→ 门20204N0 → _2_7_1
-    ///                                                                     └→ 门20204N1 → _2_8 → _2_9
+    /// 离线模拟（1641 张图）见 `tools/simulate_flatten.py`：A 类 108 张 / A+B 199 张
+    /// 可安全展开，跳过的基本就是上面后两条。
     /// </summary>
     internal static class BranchFlatten
     {
-        // ---------------------------------------------------------------- 目标
-        private const string GraphName = "R10049-2";
-        private const string StartKey = "R10049-2_2_1";
-
-        /// <summary>依次串起来的 5 段讲解（最后一段出口改接到兜底门）。</summary>
-        private static readonly string[] ChainKeys =
-        {
-            "R10049-2_2_2",   // 洛千雪 10084
-            "R10049-2_2_3",   // 洛天雄 10083
-            "R10049-2_2_4",   // 裘之墨 10078
-            "R10049-2_2_5",   // 说书人 10053
-            "R10049-2_2_6",   // 凌梦蝶 10008
-        };
-
-        /// <summary>讲解链上的 5 个角色（只用于提前打开姓名窗口与日志）。</summary>
-        private static readonly int[] NeutralPids = { 10084, 10083, 10078, 10053, 10008 };
-
-        /// <summary>从起点沿 OutPort.connections[1] 走几步到兜底门。</summary>
-        private const int LadderSteps = 5;
+        private const int MaxNodes = 4096;      // 单图节点上限
+        private const int MaxRegion = 512;      // 独占内容节点上限
 
         // ---------------------------------------------------------------- 状态
-        /// <summary>被「展开」接管、一律判真的门（HoldNode 指针）。</summary>
+        /// <summary>被接管、一律判真的门（HoldNode 指针）。</summary>
         private static readonly HashSet<IntPtr> _gateForced = new HashSet<IntPtr>();
 
-        /// <summary>已处理过 / 不是目标图的 graph 指针（避免在热路径上反复取名字）。</summary>
-        private static readonly HashSet<IntPtr> _skip = new HashSet<IntPtr>();
-        private static readonly Queue<IntPtr> _skipOrder = new Queue<IntPtr>();
-        private const int SkipCap = 512;
+        /// <summary>已经处理过的 graph 指针（补丁只打一次）。</summary>
+        private static readonly HashSet<IntPtr> _done = new HashSet<IntPtr>();
 
-        /// <summary>
-        /// 「这个节点已经判定过归属」。Try 挂在 dobby 的条件判定上，每秒上百次，
-        /// 而每次判定都要取 graph 指针 + 读图名（会分配 .NET 字符串）。
-        /// 这里按节点指针缓存结论，让同一节点的第二次之后只剩一次哈希查找。
-        /// </summary>
+        /// <summary>「这个节点已经判定过归属」——Try 挂在热路径上，省掉重复取图名。</summary>
         private static readonly HashSet<IntPtr> _nodeChecked = new HashSet<IntPtr>();
         private static readonly Queue<IntPtr> _nodeOrder = new Queue<IntPtr>();
         private const int NodeCap = 8192;
 
-        /// <summary>目标图的套用尝试次数（节点没加载完时重试，但必须限次）。</summary>
+        /// <summary>图没加载完时重试的次数上限。</summary>
         private static readonly Dictionary<IntPtr, int> _attempts = new Dictionary<IntPtr, int>();
         private const int MaxAttempts = 8;
 
-        private static int _logMiss, _logTake;
+        private static int _logGraph, _logPair, _logMiss;
         private static bool _warnedApi;
 
         // ================================================================ 对外
@@ -93,19 +66,17 @@ namespace WulinTweaks
         /// 这个门是否已被「分支展开」接管（= 无条件判真）。
         /// 由 `Patch_FlattenGate`（HoldNode.CheckCondition 的 Postfix）调用。
         ///
-        /// ⚠️ 这里**故意不看开关**：一旦补写出边，图就回不去了 —— 若中途把开关关掉、
-        /// 而判真也一起失效，那么「_2_6 出口已指向兜底门」+「兜底门判假」= 剧情永久卡死。
-        /// 开关只在「决定要不要打补丁」时读。
+        /// ⚠️ 故意不看开关：补丁一旦写下，图就回不去了 —— 若中途关掉开关、判真也一起失效，
+        /// 就会「出口已改指别处」+「那道门判假」= 剧情永久卡死。
         /// </summary>
-        internal static bool IsGateForced(IntPtr holdNode)
+        internal static bool IsGateForced(IntPtr gate)
         {
-            return holdNode != IntPtr.Zero && _gateForced.Count > 0 && _gateForced.Contains(holdNode);
+            return gate != IntPtr.Zero && _gateForced.Count > 0 && _gateForced.Contains(gate);
         }
 
         /// <summary>
-        /// 在图上套用补丁。anyNode 可以是目标图里的任意一个节点（用它的 graph 指针去重）。
-        /// 由 Patch_StoryPlayBegin（剧情开始播放）和 NativeTeamHook.Dispatch（条件判定）
-        /// 两个很热的点调用，所以除了首次命中，其余都是一次哈希查找。
+        /// 在图上套用补丁。anyNode 可以是图里任意节点（用它的 graph 指针去重）。
+        /// 由 Patch_StoryPlayBegin（剧情开始播放）和 NativeTeamHook.Dispatch（条件判定）调用。
         /// </summary>
         internal static void Try(IntPtr anyNode)
         {
@@ -127,34 +98,16 @@ namespace WulinTweaks
                 }
 
                 IntPtr graph = Il2CppNative.Ptr(anyNode, "graph");
-                if (graph == IntPtr.Zero)
-                {
-                    Probe("取不到 graph：node=" + Hex(anyNode)
-                          + " class=" + (Il2CppNative.ClassNameOf(anyNode) ?? "?"));
-                    Remember(anyNode);
-                    return;
-                }
-                if (_skip.Contains(graph)) { Remember(anyNode); return; }
+                if (graph == IntPtr.Zero) { Remember(anyNode); return; }
+                if (_done.Contains(graph)) { Remember(anyNode); return; }
 
                 string gn = Il2CppNative.Str(graph, "_name");
-                if (gn == null)
-                {
-                    // 读不到图名 ≠ 不是目标图：可能是对象还没完全初始化。
-                    // 不能 Skip（那样这张图就永久不处理了），下次再试。
-                    Probe("读不到图名 graph=" + Hex(graph));
-                    return;
-                }
-                if (!string.Equals(gn, GraphName, StringComparison.Ordinal))
-                {
-                    Probe("非目标图 name=\"" + gn + "\"");
-                    Skip(graph);
-                    Remember(anyNode);
-                    return;
-                }
+                if (gn == null) return;              // 读不到图名 ≠ 不是目标：下次再试
 
-                Plugin.L.LogInfo("[flat] 命中目标图 " + GraphName + "，开始套补丁");
+                if (IsBlacklisted(gn)) { _done.Add(graph); Remember(anyNode); return; }
+
                 Apply(graph, gn);
-                if (_skip.Contains(graph)) Remember(anyNode);   // 打成功 / 放弃 → 以后不必再看
+                if (_done.Contains(graph)) Remember(anyNode);
             }
             catch (Exception e)
             {
@@ -162,215 +115,271 @@ namespace WulinTweaks
             }
         }
 
-        // ================================================================ 打补丁
+        private static bool IsBlacklisted(string gn)
+        {
+            try
+            {
+                var cfg = Plugin.FlattenBlacklist;
+                string raw = cfg == null ? null : cfg.Value;
+                if (string.IsNullOrEmpty(raw)) return false;
+                foreach (var piece in raw.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' },
+                                                StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var p = piece.Trim();
+                    if (p.Length == 0) continue;
+                    if (p.EndsWith("*"))
+                    {
+                        if (gn.StartsWith(p.Substring(0, p.Length - 1), StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                    else if (string.Equals(gn, p, StringComparison.OrdinalIgnoreCase)) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        // ================================================================ 数据结构
+        private sealed class OutInfo
+        {
+            public IntPtr Port;
+            public readonly List<IntPtr> Targets = new List<IntPtr>(2);
+        }
+
+        private sealed class Pair
+        {
+            public IntPtr G0;      // Negate = 0（在队侧）
+            public IntPtr G1;      // Negate = 1（不在队侧）
+            public int Pid;
+            public bool BothStory; // 两侧都是单节点剧情 = B 类
+            public HashSet<IntPtr> Region;
+            public List<KeyValuePair<IntPtr, IntPtr>> Exits;  // (源节点, 旧目标)
+        }
+
+        // ================================================================ 主流程
         private static void Apply(IntPtr graph, string graphName)
         {
             IntPtr list = Il2CppNative.Ptr(graph, "nodes");
             int n = Il2CppNative.ListCount(list);
-            if (n <= 0 || n > 4096)
+            if (n <= 2 || n > MaxNodes)
             {
-                Skip(graph);
-                Plugin.L.LogWarning("[flat] 图 " + graphName + " 的节点表异常（n=" + n + "），放弃");
+                _done.Add(graph);
+                Plugin.L.LogWarning("[flat] 图 " + graphName + " 节点数异常（" + n + "），跳过");
                 return;
             }
 
-            // ---------- 第一遍：起点 + 5 段讲解（按 ScenarioKey） ----------
-            IntPtr start = IntPtr.Zero;
-            var chain = new IntPtr[ChainKeys.Length];
-            int scenSeen = 0;
-            string sampleKeys = "";
-
+            // ---------- ① 收节点表 + 每条出边（只看 OutPort：剧情走线就在它上面） ----------
+            var outs = new Dictionary<IntPtr, OutInfo>(n);
+            var condOf = new Dictionary<IntPtr, IntPtr>(n);
             for (int i = 0; i < n; i++)
             {
                 IntPtr nd = Il2CppNative.ListItem(list, i);
                 if (nd == IntPtr.Zero) continue;
-                // 有效性校验：图里每个节点的 graph 字段都指回这张图。
-                // 数组万一读偏，这一条能挡住，不至于把垃圾当节点用（手机端 v68 的 SIGSEGV）。
-                if (Il2CppNative.Ptr(nd, "graph") != graph) continue;
-                if (Il2CppNative.ClassNameOf(nd) != "StoryScenarioNode") continue;
+                if (Il2CppNative.Ptr(nd, "graph") != graph) continue;    // 数组读偏的保险
 
-                string key = Il2CppNative.Str(nd, "ScenarioKey");
-                if (string.IsNullOrEmpty(key)) continue;
-                scenSeen++;
-                if (scenSeen <= 6) sampleKeys += (sampleKeys.Length == 0 ? "" : ", ") + key;
-
-                if (start == IntPtr.Zero && string.Equals(key, StartKey, StringComparison.Ordinal)) start = nd;
-                for (int e = 0; e < ChainKeys.Length; e++)
-                    if (chain[e] == IntPtr.Zero && string.Equals(key, ChainKeys[e], StringComparison.Ordinal))
-                        chain[e] = nd;
-            }
-
-            if (start == IntPtr.Zero)
-            {
-                // 图可能还没加载完 → 下次 hook 再试。但**必须限次**：
-                // Try 挂在每次队友条件判定上，重试一次就要扫 380 个节点。
-                _attempts.TryGetValue(graph, out int att);
-                att++;
-                _attempts[graph] = att;
-                if (att <= 3)
-                    Plugin.L.LogWarning("[flat] 图 " + graphName + " 里没找到起点 " + StartKey
-                                        + "（第 " + att + " 次；共 " + n + " 节点，其中播放剧情节点 "
-                                        + scenSeen + " 个；样例：[" + sampleKeys + "]）");
-                if (att >= MaxAttempts)
+                var info = new OutInfo();
+                IntPtr op = NodePort(nd, "OutPort");
+                if (op != IntPtr.Zero)
                 {
-                    Skip(graph);
-                    Plugin.L.LogWarning("[flat] 图 " + graphName + " 重试 " + att + " 次仍找不到起点，放弃");
+                    info.Port = op;
+                    int c = ConnCount(op);
+                    if (c > 0 && c <= 32)
+                        for (int k = 0; k < c; k++)
+                        {
+                            IntPtr t = ConnNodeAt(op, k);
+                            if (t != IntPtr.Zero) info.Targets.Add(t);
+                        }
                 }
-                return;
+                outs[nd] = info;
+
+                // 门才有 conditionPort
+                IntPtr cp = NodePort(nd, "conditionPort");
+                condOf[nd] = cp == IntPtr.Zero ? IntPtr.Zero : ConditionOf(cp);
             }
 
-            // ---------- 第二遍：结构走链认门（不依赖 conditionPort） ----------
-            var gates = new List<IntPtr>(16);
-            IntPtr gateLast = WalkLadder(start, gates);
-
-            if (gateLast == IntPtr.Zero)
+            // ---------- ② 找互补门对 ----------
+            var pairs = new List<Pair>();
+            var seenPair = new HashSet<long>();
+            int xSkipped = 0;
+            foreach (var kv in outs)
             {
-                Skip(graph);
-                Plugin.L.LogWarning("[flat] 图 " + graphName + " 结构走链失败，认不出兜底门，放弃展开"
-                                    + "（共 " + n + " 节点，起点已找到）");
-                return;
-            }
+                var ts = kv.Value.Targets;
+                if (ts.Count != 2) continue;
+                IntPtr a = ts[0], b = ts[1];
+                if (a == b) continue;
 
-            for (int e = 0; e < ChainKeys.Length; e++)
-            {
-                if (chain[e] != IntPtr.Zero) continue;
-                Skip(graph);
-                Plugin.L.LogWarning("[flat] 图 " + graphName + " 缺讲解节点 " + ChainKeys[e] + "，放弃展开");
-                return;
-            }
+                IntPtr ca = condOf.TryGetValue(a, out var x) ? x : IntPtr.Zero;
+                IntPtr cb = condOf.TryGetValue(b, out var y) ? y : IntPtr.Zero;
+                if (ca == IntPtr.Zero || cb == IntPtr.Zero) continue;
 
-            // ---------- 第三遍：改连线（先把 5 条都验一遍再写） ----------
-            var ops = new IntPtr[ChainKeys.Length];
-            var conns = new IntPtr[ChainKeys.Length];
-            var targets = new IntPtr[ChainKeys.Length];
+                int pa = Il2CppNative.Int32(ca, "partnerID");
+                int pb = Il2CppNative.Int32(cb, "partnerID");
+                if (pa <= 0 || pa != pb) continue;                 // partnerID<=0 不是「需要伙伴」
 
-            for (int e = 0; e < ChainKeys.Length; e++)
-            {
-                targets[e] = (e + 1 < ChainKeys.Length) ? chain[e + 1] : gateLast;
+                bool na = Il2CppNative.Byte(ca, "Negate") != 0;
+                bool nb = Il2CppNative.Byte(cb, "Negate") != 0;
+                if (na == nb) continue;                            // 必须互补
 
-                ops[e] = NodePort(chain[e], "OutPort");
-                if (ops[e] == IntPtr.Zero)
+                IntPtr g0 = na ? b : a;                            // Negate=0 = 在队侧
+                IntPtr g1 = na ? a : b;
+
+                long key = (long)g0.ToInt64() ^ ((long)g1.ToInt64() << 1);
+                if (!seenPair.Add(key)) continue;
+
+                // 只处理 A/B 类（至少一侧是「单个播放剧情节点」）。
+                // X 类（两侧都不是）形状不明，离线没验证过，这里不动，只计数。
+                bool s0 = IsStoryExit(outs, g0);
+                bool s1 = IsStoryExit(outs, g1);
+                if (!s0 && !s1) { xSkipped++; continue; }
+
+                pairs.Add(new Pair
                 {
-                    Skip(graph);
-                    Plugin.L.LogWarning("[flat] 图 " + graphName + " 的 " + ChainKeys[e]
-                                        + " 取不到 OutPort 端口，放弃展开（节点类="
-                                        + (Il2CppNative.ClassNameOf(chain[e]) ?? "?") + "）");
-                    return;
-                }
-                conns[e] = ConnAt(ops[e], 0);
-
-                if (conns[e] == IntPtr.Zero && !Il2CppNative.HasMethod(ops[e], "Connect", 1))
-                {
-                    Skip(graph);
-                    Plugin.L.LogWarning("[flat] 图 " + graphName + " 的 " + ChainKeys[e]
-                                        + " 既读不到 connections、也没有 Connect 方法，放弃展开"
-                                        + "（端口类=" + (Il2CppNative.ClassNameOf(ops[e]) ?? "?")
-                                        + " 继承=" + Il2CppNative.ClassChain(ops[e]) + "）");
-                    return;
-                }
+                    G0 = g0,
+                    G1 = g1,
+                    Pid = pa,
+                    BothStory = s0 && s1,
+                });
             }
 
-            int ok = 0;
-            var how = new string[ChainKeys.Length];
-            for (int e = 0; e < ChainKeys.Length; e++)
+            if (pairs.Count == 0) { _done.Add(graph); return; }
+
+            // ---------- ③ 每对算独占内容 region 与对外出口 ----------
+            foreach (var p in pairs)
             {
-                if (conns[e] != IntPtr.Zero && Il2CppNative.WritePtr(conns[e], "node", targets[e]))
-                {
-                    ok++;
-                    how[e] = "字";
-                    continue;
-                }
-                if (ApiRedirect(ops[e], targets[e]))
-                {
-                    ok++;
-                    how[e] = "方";
-                    continue;
-                }
-                how[e] = "×";
-                Plugin.L.LogWarning("[flat] 改连失败 " + ChainKeys[e]);
+                var r0 = Reach(p.G0, outs);
+                var r1 = Reach(p.G1, outs);
+                var region = new HashSet<IntPtr>(r0);
+                region.ExceptWith(r1);
+                region.Remove(p.G0);
+                region.Remove(p.G1);
+                p.Region = region;
+                p.Exits = region.Count == 0 || region.Count > MaxRegion
+                    ? new List<KeyValuePair<IntPtr, IntPtr>>()
+                    : FindExits(region, outs, p.G1);
             }
-            if (ok < ChainKeys.Length)
-                Plugin.L.LogError("[flat] ⚠ 只改成功 " + ok + "/" + ChainKeys.Length
-                                  + " 条连线 —— 这张图的走线现在是半改状态，重启游戏可复原");
 
-            // ---------- 第四遍：把认出来的门接管为「无条件判真」 ----------
-            int added = 0;
-            for (int i = 0; i < gates.Count; i++)
-                if (_gateForced.Add(gates[i])) added++;
-
-            Skip(graph);
-
-            // ---------- 顺带把 5 个名字窗口打开 ----------
-            // 后几位在剧情刚开始时可能还没有实例，等轮到各自的门才开窗口就晚了
-            // （手机端 v75/v76 失败、v77 提前开才成功）。
-            for (int i = 0; i < NeutralPids.Length; i++)
+            // ---------- ④ 剔除有问题的对（重叠 / 无出口 / 过大） ----------
+            var expand = new List<Pair>();
+            int skippedOverlap = 0, skippedExits = 0, skippedEmpty = 0;
+            foreach (var p in pairs)
             {
-                try { RelaxName.MarkRelaxed(NeutralPids[i], graphName); } catch { }
+                if (p.Region.Count == 0) { skippedEmpty++; continue; }
+                if (p.Region.Count > MaxRegion) { skippedEmpty++; continue; }
+                if (p.Exits.Count == 0) { skippedExits++; continue; }
+
+                bool clash = false;
+                foreach (var q in pairs)
+                {
+                    if (q == p || q.Region.Count == 0) continue;
+                    if (p.Region.Overlaps(q.Region)) { clash = true; break; }
+                }
+                if (clash) { skippedOverlap++; continue; }
+
+                expand.Add(p);
             }
 
-            Plugin.L.LogInfo("[flat] 图 " + graphName + " 展开完成：改连 " + ok + "/" + ChainKeys.Length
-                             + "（" + string.Join("", how) + "），接管门 " + added + " 个（累计 "
-                             + _gateForced.Count + "），共 " + n + " 节点");
-            if (_logTake++ < 3)
-                Plugin.L.LogInfo("[flat] 播放顺序：_2_1 → 洛千雪 _2_2 → 洛天雄 _2_3 → 裘之墨 _2_4"
-                                 + " → 说书人 _2_5 → 凌梦蝶 _2_6 → 兜底（无伙伴）→ 汇合 _2_9");
+            if (_logGraph++ < 40)
+                Plugin.L.LogInfo("[flat] 图 " + graphName + "：节点 " + n + "，门对 " + pairs.Count
+                                 + "，展开 " + expand.Count + "（B 类 "
+                                 + CountB(expand) + "），跳过 重叠" + skippedOverlap
+                                 + "/空或无出口" + (skippedEmpty + skippedExits)
+                                 + "/非A-B类" + xSkipped);
+
+            if (expand.Count == 0) { _done.Add(graph); return; }
+
+            // ---------- ⑤ 改线 + 接管门 ----------
+            int ok = 0, fail = 0;
+            foreach (var p in expand)
+            {
+                bool allOk = true;
+                foreach (var e in p.Exits)
+                {
+                    IntPtr src = e.Key, oldT = e.Value;
+                    var info = outs[src];
+                    if (info.Port == IntPtr.Zero || !RedirectEdge(info.Port, oldT, p.G1))
+                    {
+                        allOk = false;
+                        fail++;
+                    }
+                    else ok++;
+                }
+
+                _gateForced.Add(p.G0);
+                _gateForced.Add(p.G1);
+
+                try { RelaxName.MarkRelaxed(p.Pid, graphName); } catch { }
+
+                if (_logPair++ < 60)
+                    Plugin.L.LogInfo("[flat]   pid=" + p.Pid + (p.BothStory ? " (B 类)" : " (A 类)")
+                                     + " 在队门=" + Hex(p.G0) + " 不在队门=" + Hex(p.G1)
+                                     + " 内容 " + p.Region.Count + " 节点，改线 " + p.Exits.Count
+                                     + (allOk ? "" : " ⚠部分失败"));
+            }
+
+            _done.Add(graph);
+
+            if (_logGraph <= 40)
+                Plugin.L.LogInfo("[flat] 图 " + graphName + " 展开完成：改线 " + ok + " 条"
+                                 + (fail > 0 ? "，失败 " + fail + " 条" : "")
+                                 + "，接管门 " + _gateForced.Count + " 个（累计）");
+            if (fail > 0)
+                Plugin.L.LogError("[flat] ⚠ 图 " + graphName + " 有 " + fail
+                                  + " 条连线没改成 —— 该图走线处于半改状态，重启游戏可复原");
         }
 
-        /// <summary>
-        /// 从起点沿 `OutPort.connections[1]` 走 LadderSteps 步，收集沿途的 10 个门。
-        /// 返回落点（= 第 5 层的 Negate=1 门 = 「无伙伴」兜底门）。
-        ///
-        /// 依据（已用 PC 的 R10049-2.asset 核对）：
-        ///   每个门有两条出边 —— [下一层的 Negate=0 门, 下一层的 Negate=1 门]，
-        ///   所以「走第 2 条」正好是 if/else 的 else 侧，一路走到底就是兜底门。
-        /// </summary>
-        private static IntPtr WalkLadder(IntPtr start, List<IntPtr> gates)
+        private static int CountB(List<Pair> ps)
         {
-            IntPtr cur = start;
-            for (int step = 1; step <= LadderSteps; step++)
+            int c = 0;
+            for (int i = 0; i < ps.Count; i++) if (ps[i].BothStory) c++;
+            return c;
+        }
+
+        /// <summary>这一侧是不是「单个播放剧情节点」——用来区分 A 类/B 类（只用于日志）。</summary>
+        private static bool IsStoryExit(Dictionary<IntPtr, OutInfo> outs, IntPtr gate)
+        {
+            if (!outs.TryGetValue(gate, out var o)) return false;
+            if (o.Targets.Count != 1) return false;
+            return Il2CppNative.Str(o.Targets[0], "ScenarioKey") != null;
+        }
+
+        /// <summary>从 start 出发（含）能到的节点集合。</summary>
+        private static HashSet<IntPtr> Reach(IntPtr start, Dictionary<IntPtr, OutInfo> outs)
+        {
+            var seen = new HashSet<IntPtr> { start };
+            var stack = new Stack<IntPtr>();
+            stack.Push(start);
+            while (stack.Count > 0)
             {
-                IntPtr op = NodePort(cur, "OutPort");
-                if (op == IntPtr.Zero)
+                IntPtr cur = stack.Pop();
+                if (!outs.TryGetValue(cur, out var o)) continue;
+                for (int i = 0; i < o.Targets.Count; i++)
                 {
-                    Plugin.L.LogWarning("[flat] 走链第 " + step + " 步：取不到 OutPort（节点类="
-                                        + (Il2CppNative.ClassNameOf(cur) ?? "?") + "）");
-                    return IntPtr.Zero;
+                    IntPtr t = o.Targets[i];
+                    if (seen.Add(t)) stack.Push(t);
                 }
-
-                int cnt = ConnCount(op);
-                IntPtr a = ConnNodeAt(op, 0);
-                IntPtr b = cnt >= 2 ? ConnNodeAt(op, 1) : IntPtr.Zero;
-
-                if (step == 1)
-                    LadderProbe("第 1 步 取端口=" + _lastPortVia
-                                + " 端口类=" + (Il2CppNative.ClassNameOf(op) ?? "?")
-                                + " 继承=" + Il2CppNative.ClassChain(op)
-                                + " 连线数=" + cnt
-                                + " 门A=" + Hex(a) + " 门B=" + Hex(b));
-
-                if (b == IntPtr.Zero)
-                {
-                    Plugin.L.LogWarning("[flat] 走链第 " + step + " 步：第 2 条连线取不到（连线数=" + cnt + "）"
-                                        + "  取端口=" + _lastPortVia
-                                        + " 端口类=" + (Il2CppNative.ClassNameOf(op) ?? "?")
-                                        + " 继承=" + Il2CppNative.ClassChain(op));
-                    return IntPtr.Zero;
-                }
-
-                AddUnique(gates, a);
-                AddUnique(gates, b);
-                cur = b;
             }
-            return cur;   // 第 5 个 else 门 = 兜底门
+            return seen;
+        }
+
+        private static List<KeyValuePair<IntPtr, IntPtr>> FindExits(
+            HashSet<IntPtr> region, Dictionary<IntPtr, OutInfo> outs, IntPtr g1)
+        {
+            var res = new List<KeyValuePair<IntPtr, IntPtr>>(4);
+            foreach (var node in region)
+            {
+                if (!outs.TryGetValue(node, out var o)) continue;
+                for (int i = 0; i < o.Targets.Count; i++)
+                {
+                    IntPtr t = o.Targets[i];
+                    if (region.Contains(t)) continue;
+                    if (t == g1) continue;                        // 已经接过去了
+                    res.Add(new KeyValuePair<IntPtr, IntPtr>(node, t));
+                }
+            }
+            return res;
         }
 
         // ================================================================ 状态缓存
-        private static void Skip(IntPtr graph)
-        {
-            if (graph == IntPtr.Zero || !_skip.Add(graph)) return;
-            _skipOrder.Enqueue(graph);
-            while (_skipOrder.Count > SkipCap) _skip.Remove(_skipOrder.Dequeue());
-        }
 
         private static void Remember(IntPtr node)
         {
@@ -379,63 +388,31 @@ namespace WulinTweaks
             while (_nodeOrder.Count > NodeCap) _nodeChecked.Remove(_nodeOrder.Dequeue());
         }
 
-        // ================================================================ 诊断
-        private static int _logProbe;
-        private static void Probe(string m)
-        {
-            if (_logProbe++ < 12) Plugin.L.LogInfo("[flat:probe] " + m);
-        }
-
-        private static int _logLadder;
-        private static void LadderProbe(string m)
-        {
-            if (_logLadder++ < 6) Plugin.L.LogInfo("[flat:ladder] " + m);
-        }
-
         // ================================================================ 端口/连线
         /// <summary>
         /// 取节点上的端口对象。
         ///
-        /// ⚠️ 关键事实（2026-10-23 查 il2cpp dump 确认）：`StoryDefaultNode.ConditionPort` /
-        /// `DialogNodePort` 这些类型是**空类** —— 没有基类、没有字段、没有方法，纯粹是占位。
-        /// 而节点上那些 `[SerializeField]` 端口字段（`OutPort` / `conditionPort` / `InPort`）
-        /// 的类型正是这些占位类，所以**读字段拿到的是空壳，不能当端口用**。
-        /// 真正的端口只在 `Node.ports` 字典里，必须通过 `Node.GetPort(名字)` 取。
+        /// ⚠️ `StoryDefaultNode.ConditionPort` / `DialogNodePort` 这些类型在 il2cpp 里是**空类**
+        /// （无基类、无字段、无方法），而节点上的端口字段声明的正是它们 —— 读字段拿到的是空壳。
+        /// 真端口只在 `Node.ports` 字典里，必须走 `Node.GetPort(名字)`。
         /// </summary>
         private static IntPtr NodePort(IntPtr node, string name)
         {
             IntPtr p = Il2CppNative.Ptr(node, name);
-            if (IsUsablePort(p)) { _lastPortVia = "字段"; return p; }
+            if (IsUsablePort(p)) return p;
 
             IntPtr q = Il2CppNative.GetPort(node, name);
-            if (IsUsablePort(q)) { _lastPortVia = "GetPort"; return q; }
-
-            _lastPortVia = p != IntPtr.Zero ? "字段(空壳)" : "无";
-            return p != IntPtr.Zero ? p : q;
+            if (IsUsablePort(q)) return q;
+            return IntPtr.Zero;                 // 空壳没用，当没有
         }
 
-        private static string _lastPortVia = "?";
-
-        /// <summary>这个对象像不像一个真端口（有 connections 字段或端口方法）。</summary>
         private static bool IsUsablePort(IntPtr port)
         {
             if (port == IntPtr.Zero) return false;
             return Il2CppNative.HasField(port, "connections")
-                || Il2CppNative.HasMethod(port, "get_Connection", 0)
-                || Il2CppNative.HasMethod(port, "GetConnections", 1);
+                || Il2CppNative.HasMethod(port, "get_Connection", 0);
         }
 
-        /// <summary>NodePort.connections[i]（PortConnection 对象），字段路。</summary>
-        private static IntPtr ConnAt(IntPtr port, int idx)
-        {
-            if (port == IntPtr.Zero || idx < 0) return IntPtr.Zero;
-            IntPtr cl = Il2CppNative.Ptr(port, "connections");
-            if (cl == IntPtr.Zero) return IntPtr.Zero;
-            if (idx >= Il2CppNative.ListCount(cl)) return IntPtr.Zero;
-            return Il2CppNative.ListItem(cl, idx);
-        }
-
-        /// <summary>端口上的连线数（字段路 → GetConnections 路）。</summary>
         private static int ConnCount(IntPtr port)
         {
             IntPtr cl = Il2CppNative.Ptr(port, "connections");
@@ -444,39 +421,24 @@ namespace WulinTweaks
                 int n = Il2CppNative.ListCount(cl);
                 if (n > 0) return n;
             }
-            IntPtr lst = Il2CppNative.CallRefBool(port, "GetConnections", false);
-            if (lst != IntPtr.Zero) return Il2CppNative.ListCount(lst);
             return 0;
         }
 
-        /// <summary>
-        /// 第 idx 条连线连到的「节点」。三条路依次试：
-        ///   ① connections[idx].node          （与手机端同源）
-        ///   ② GetConnections(false)[idx] → get_node
-        ///   ③ get_Connection → get_node      （只有 idx=0 时可用）
-        /// </summary>
+        /// <summary>第 idx 条连线连到的节点。</summary>
         private static IntPtr ConnNodeAt(IntPtr port, int idx)
         {
             if (port == IntPtr.Zero || idx < 0) return IntPtr.Zero;
-
-            IntPtr c = ConnAt(port, idx);
-            if (c != IntPtr.Zero)
+            IntPtr cl = Il2CppNative.Ptr(port, "connections");
+            if (cl != IntPtr.Zero)
             {
-                IntPtr nd = Il2CppNative.Ptr(c, "node");
-                if (nd != IntPtr.Zero) return nd;
-            }
-
-            IntPtr lst = Il2CppNative.CallRefBool(port, "GetConnections", false);
-            if (lst != IntPtr.Zero)
-            {
-                IntPtr p = Il2CppNative.ListItem(lst, idx);
-                if (p != IntPtr.Zero)
+                if (idx >= Il2CppNative.ListCount(cl)) return IntPtr.Zero;
+                IntPtr c = Il2CppNative.ListItem(cl, idx);
+                if (c != IntPtr.Zero)
                 {
-                    IntPtr nd = Il2CppNative.CallRef(p, "get_node");
+                    IntPtr nd = Il2CppNative.Ptr(c, "node");
                     if (nd != IntPtr.Zero) return nd;
                 }
             }
-
             if (idx == 0)
             {
                 IntPtr p = Il2CppNative.CallRef(port, "get_Connection");
@@ -485,27 +447,33 @@ namespace WulinTweaks
             return IntPtr.Zero;
         }
 
-        /// <summary>
-        /// 方法路改连：Disconnect 掉原有那条，再 Connect 到目标节点的 InPort，
-        /// 最后回读一次确认真的指过去了。
-        /// </summary>
-        private static bool ApiRedirect(IntPtr fromOut, IntPtr targetNode)
+        /// <summary>conditionPort 连着的条件节点。</summary>
+        private static IntPtr ConditionOf(IntPtr port)
         {
-            IntPtr targetIn = NodePort(targetNode, "InPort");
-            if (targetIn == IntPtr.Zero) return false;
-
-            IntPtr peer = Il2CppNative.CallRef(fromOut, "get_Connection");
-            if (peer != IntPtr.Zero && peer != targetIn)
-                Il2CppNative.CallVoid1(fromOut, "Disconnect", peer);
-
-            if (!Il2CppNative.CallVoid1(fromOut, "Connect", targetIn)) return false;
-
-            return ConnNodeAt(fromOut, 0) == targetNode;
+            IntPtr c = ConnNodeAt(port, 0);
+            if (c != IntPtr.Zero) return c;
+            IntPtr peer = Il2CppNative.CallRef(port, "get_Connection");
+            return peer == IntPtr.Zero ? IntPtr.Zero : Il2CppNative.CallRef(peer, "get_node");
         }
 
-        private static void AddUnique(List<IntPtr> list, IntPtr v)
+        /// <summary>把端口上「指向 oldTarget」的那条连线改成指向 newTarget。</summary>
+        private static bool RedirectEdge(IntPtr port, IntPtr oldTarget, IntPtr newTarget)
         {
-            if (v != IntPtr.Zero && !list.Contains(v)) list.Add(v);
+            if (port == IntPtr.Zero || newTarget == IntPtr.Zero) return false;
+
+            IntPtr cl = Il2CppNative.Ptr(port, "connections");
+            if (cl != IntPtr.Zero)
+            {
+                int cnt = Il2CppNative.ListCount(cl);
+                for (int i = 0; i < cnt && i < 32; i++)
+                {
+                    IntPtr c = Il2CppNative.ListItem(cl, i);
+                    if (c == IntPtr.Zero) continue;
+                    if (Il2CppNative.Ptr(c, "node") != oldTarget) continue;
+                    if (Il2CppNative.WritePtr(c, "node", newTarget)) return true;
+                }
+            }
+            return false;
         }
 
         private static string Hex(IntPtr p)

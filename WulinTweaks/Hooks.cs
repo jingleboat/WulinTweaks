@@ -100,8 +100,6 @@ namespace WulinTweaks
                     ModKit.ForceIgnoreTeamCondition();
                     ModKit.ForceHighlightNow();
                     ModKit.UnlockWorldMapTick();
-                    Probe_CondNode.Report();
-                    Probe_TeamState.Report();
                     // v1.10.4：换图/读档后把姓名窗口收干净（剧情里换图的场景，下一节点会重新开）
                     RelaxName.EndNow();
                 }

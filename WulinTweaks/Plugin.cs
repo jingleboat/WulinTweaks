@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.10.4";  // 1.10.4 姓名窗口改事件驱动：StoryCloseNode 收尾 + 空闲 30s，不再用短宽限
+        public const string Version = "1.11.2";  // 1.11.2 清掉诊断探针；分支展开=通用规则；姓名改名提到 OnActive Prefix
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -29,6 +29,7 @@ namespace WulinTweaks
         // ③ 剧情
         internal static ConfigEntry<bool> IgnoreTeamCondition;
         internal static ConfigEntry<bool> FlattenBranches;
+        internal static ConfigEntry<string> FlattenBlacklist;
         internal static ConfigEntry<string> StoryBlacklist;
 
         // ④ 易物
@@ -65,6 +66,12 @@ namespace WulinTweaks
 
             IgnoreTeamCondition = Config.Bind("3_Story", "IgnoreTeamMemberCondition", false,
                 "剧情触发时忽略「队伍中是否存在某角色」条件");
+
+FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
+                "剧情分支展开的**排除名单**（逗号分隔；末尾带 * 按前缀匹配）。"
+                + "留空 = 所有剧情图都按通用规则展开。"
+                + "遇到某张图播得不对（比如两侧是互斥剧情、展开后自相矛盾），把它的图名填进来重启即可；"
+                + "图名就是剧情资产名，例如 R10049-2。");
 
             FlattenBranches = Config.Bind("3_Story", "FlattenBranches", true,
                 "剧情分支展开：把「某角色是否在队」的互补分支由 if/else 改成**顺序播放** —— "
