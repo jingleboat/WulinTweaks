@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.9.4";   // 1.9.4 清死代码 + Hold 压制改为「仅当本次判定真的碰过队友条件」
+        public const string Version = "1.9.5";   // 1.9.5 「伙伴邀请或离队」容错：remove 找不到人（按 id 不在队 / 按位置越界）视为已成功，避免剧情卡死
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
