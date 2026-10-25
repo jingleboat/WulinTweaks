@@ -183,6 +183,90 @@ python tools/simulate_flatten.py --only R20025-11 --detail   # 门对 3，B 类 
 
 ---
 
+## 水域 / 入水机制（技术归档，2026-10-25）
+
+> 起因：用户发现「PC 上女角色进华清泉(504)会走进水池，手机端不会」。这一节是查完的结论，
+> 代码侧不改任何东西，只留档，免得以后重走一遍。
+
+### 1. 水域格从哪来
+
+地图 prefab 里单独一层 `_SwimGrid`（Tilemap）定义「哪些格是水域」。PC 的
+`map_assets_all.bundle` 里实测只有这几份数据：
+
+| 对象 | 格数 | 范围 |
+|---|---|---|
+| `_SwimGrid`（Map_504） | 760 | x 12~80，y 18~43 与 y 85~100（两个池子） |
+| `_SwimGrid`（2160） | 177 | x 63~80，y 85~100（就是 504 第二个池子） |
+| `_SwimLadder` | 8 / 2 | 上岸点 |
+
+官方 mod 编辑器文档原话：**「温泉场景实际有单独的一个地格图层控制地格属性，只有地图编辑器配置了的地格
+才算作水域……并不是玩家看到是水的地方就是水域。」**
+
+### 2. 判定链（PC / 手机同构）
+
+`Role.CheckInBathWater(Nullable<Vector3Int> tile)`：
+
+```
+cell = tile ?? WorldToCell(transform.position)   // 不传就用脚下格
+swim = MapManager.IsSwimGrid(cell)               // → MapEntity.IsSwimGrid → 查 _SwimGrid
+if (是玩家) RoamingManager.SetInBath(swim)
+if (swim == Role.IsInBath) return                // 幂等：站着不动不会被重复补
+Role.IsInBath = swim; GameCharacterInstance.SetBathing(swim)
+if (swim) GameUtil.CreateRoleGhost(role)         // 水中倒影
+Animator.SetFloat("IsBath", swim ? 1 : 0); 影子隐藏; 移速 = CharMoveSpeedInWater(0.5×)
+```
+
+**判据只有「格子在不在 `_SwimGrid` 里」** —— 不看角色 id、不看性别、不看形象。
+
+调用点只有这 5 类，注意**站着不动不会有任何调用**：
+
+| 调用点 | 传的格 |
+|---|---|
+| `Role.OnMove` | 不传（脚下格），每走一格一次 |
+| `CreateRoleMar.CreateNpc` / `CreatePlayer` | 出生格 |
+| 剧情 `MoveNodeOnPlay` / `MoveNodeSkip` | 目标格 |
+| `JumpToDestinationNodeOnPlay` | 目标格 |
+| `ChangeNpcDestinationNode.OnResult` | 目标格 |
+
+### 3. 「能入水」≠「像在游泳」
+
+游泳的观感由**形象资源**决定（`chara_assets_all.bundle` 实测，命名规律）：
+
+- 动作：`{B|Z}{形象}_Wash*`，例如 `B178_WashStand1` / `B178_WashMove1` —— 共 **160 条，覆盖 78 个形象**
+- 贴图集：`{形象}w`，例如 `178w` / `100w` —— 共 **40 套**
+- animator 的 `runtimeAnimatorController.name` 就是形象 id（叶银瓶 178 / 玩家 100 / 叶云 177），类型是
+  `AnimatorOverrideController`，base 都叫 `Character`
+
+**没有 `{形象}w` + `Wash*` 的角色**：入水状态照样给全（`IsBath=1`、移速 0.5×、倒影、影子隐藏），
+但动画只能继续播 `stand/walk` → 看起来就是「站在水面上走」。
+
+实测对照（同一张 504）：
+
+| 角色 | 形象 | 正在播 clip | 贴图集 |
+|---|---|---|---|
+| 10009 叶银瓶 | 178 | `B178_WashStand1` / `B178_WashMove1` | `178w` |
+| 100401 玩家 | 100 | `B100_WashStand1` / `Z100_WashMove1` | `100w` |
+| 10033 叶云 | 177 | `B177_stand1` / `B177_walk` | `177`（无 w） |
+
+离线核对：177 既不在 78 个 Wash 形象里，也没有 `177w` 图集 —— 所以「随机路人也能游、她怎么都不游」
+完全是形象资源的有无，不是名单。
+
+### 4. `ForceNPCSwim`（`GameEnvConstStrData`）
+
+- 表里名称 `ForceNPCSwim`，**官方值为空**（名称即开关）；
+- 进入水域图时游戏用 `GameConfig.GetConfigStr("ForceNPCSwim")` 读它（是 `GetConfigStr`，不是 `...Array`）；
+- 把 id 填进去（或运行时替换返回值）→ **该 NPC 的落点被放进水域格**。实测：叶云 10033 从 `(36,17)`
+  陆地变成 `(21,32)` 水域格。**它只改落点，不管入水状态和动作。**
+
+### 5. 复现用的离线工具（`tools/`）
+
+`dump_swimgrid.py`（读 prefab 的 `_SwimGrid`）、`dump_map_tree.py`（prefab 层级）、
+`dump_animctrl.py` / `dump_animoverride.py`（animator 与形象覆盖）、`dump_npc_path.py`（`MapNpcPathData` 点位表）、
+`dump_story_nodes.py` / `node_types.py`（剧情节点与节点类型字段表）、
+`x64callers.py` / `x64lits.py` / `x64strings.py`（GameAssembly 反汇编辅助）、`xls_dump.py`（数据表）。
+
+---
+
 ## 安装
 
 1. 安装 [BepInEx 6.0.0-be](https://github.com/BepInEx/BepInEx/releases)（**x64 / IL2CPP** 版）到游戏根目录，先启动一次游戏，让 BepInEx 生成 `BepInEx/interop/`
