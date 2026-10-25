@@ -1,27 +1,44 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""用 UnityPy + 游戏自己的 interop DLL 生成 TypeTree，读 config bundle 里的 MapNpcPathData。
+"""在指定的 UnityFS bundle 里找 MapNpcPathData（每张图的官方 NPC 点位表），打印某张图的点位。
+
+MapNpcPathData（SerializedScriptableObject）:
+    data : Dictionary<int, List<MapNpcPath>>
+MapNpcPath:
+    npcID | factionID + jobID | isAutoCreate | respawnTime | listPosData[]
+PosData:
+    pos(Vector2Int) | dir | timeLimit(Vector2Int) | isWorkingPlace | isUnitQuarter
 
 用法：
-    python dump_npc_path.py            # 列出有点位的 mapID
-    python dump_npc_path.py 504        # 打印 504 的点位（含是否水域格）
-    python dump_npc_path.py 504 --water wulin-apk/native/src/water_mask.h
-
-MapNpcPath : npcID | factionID + jobID | isAutoCreate | respawnTime | listPosData[]
-PosData    : pos(Vector2Int) | dir | timeLimit(Vector2Int) | isWorkingPlace | isUnitQuarter
+    python dump_npc_path.py <bundle 路径>            # 只报有没有、有哪些 mapID
+    python dump_npc_path.py <bundle 路径> 504        # 打印 504 的点位
+    python dump_npc_path.py <bundle 路径> 504 water_mask.h   # 顺带标出是否水域格
 """
-import re
 import sys
 
 import UnityPy
 from UnityPy.helpers.TypeTreeGenerator import TypeTreeGenerator
 
-BUNDLE = r"D:\steamgame\steamapps\common\WulinSH\Wulin_Data\StreamingAssets\aa\StandaloneWindows64\config_assets_all.bundle"
 INTEROP = r"D:\steamgame\steamapps\common\WulinSH\BepInEx\interop"
 
 
+def looks_like(tree):
+    d = tree.get("data") if isinstance(tree, dict) else None
+    if not isinstance(d, list) or not d:
+        return False
+    f = d[0]
+    if not (isinstance(f, dict) and "first" in f and "second" in f):
+        return False
+    sec = f["second"]
+    return isinstance(sec, list) and sec and isinstance(sec[0], dict) and "listPosData" in sec[0]
+
+
 def load_water(path, mapid):
-    t = open(path, encoding="utf-8").read()
+    import re
+    try:
+        t = open(path, encoding="utf-8").read()
+    except FileNotFoundError:
+        return None
     m = re.search(r"WM_%d\[\d+\] = \{(.*?)\};" % mapid, t, re.S)
     if not m:
         return None
@@ -30,14 +47,17 @@ def load_water(path, mapid):
 
 
 def main():
-    want = int(sys.argv[1]) if len(sys.argv) > 1 and sys.argv[1].isdigit() else None
-    water = None
-    if "--water" in sys.argv:
-        water = load_water(sys.argv[sys.argv.index("--water") + 1], want)
+    bundle = sys.argv[1]
+    want = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else None
+    water = load_water(sys.argv[3], want) if len(sys.argv) > 3 and want else None
 
     gen = TypeTreeGenerator("2020.3.13f1")
     gen.load_local_dll_folder(INTEROP)
-    env = UnityPy.load(BUNDLE)
+    raw = open(bundle, "rb").read()
+    if raw[:2] == b"\x1f\x8b":          # 本作有些 bundle 是 gzip 外套
+        import gzip
+        raw = gzip.decompress(raw)
+    env = UnityPy.load(raw)
     env.typetree_generator = gen
     print("objects:", len(env.objects))
 
@@ -49,24 +69,21 @@ def main():
             tree = obj.read_typetree()
         except Exception:
             continue
-        if not isinstance(tree, dict):
-            continue
-        d = tree.get("data")
-        if isinstance(d, list) and d and isinstance(d[0], dict) and "first" in d[0]:
-            nxt = d[0].get("second")
-            if isinstance(nxt, list) and nxt and isinstance(nxt[0], dict) and "listPosData" in nxt[0]:
-                found = (obj.path_id, tree)
-                break
+        if looks_like(tree):
+            found = (obj.path_id, tree)
+            break
+
     if not found:
-        print("没找到 MapNpcPathData（typetree 里没有 listPosData 字段的资产）")
+        print("这个 bundle 里没有 MapNpcPathData")
         return
     pid, tree = found
     data = tree["data"]
     maps = sorted(p["first"] for p in data)
-    print("MapNpcPathData path_id=%s，图数=%d" % (pid, len(maps)))
+    print("找到 MapNpcPathData path_id=%s，图数=%d" % (pid, len(maps)))
+    print("mapID:", maps)
     if want is None:
-        print("mapID:", maps[:80])
         return
+
     for pair in data:
         if pair["first"] != want:
             continue
@@ -80,12 +97,12 @@ def main():
                 pos = pd.get("pos") or {}
                 x, y = pos.get("x"), pos.get("y")
                 tl = pd.get("timeLimit") or {}
-                w = ""
+                mark = ""
                 if water is not None:
-                    w = "  <== 水域格" if (x, y) in water else ""
+                    mark = "  <== 水域格" if (x, y) in water else ""
                 print("      (%s,%s) dir=%s time=(%s..%s) work=%s unit=%s%s"
                       % (x, y, pd.get("dir"), tl.get("x"), tl.get("y"),
-                         pd.get("isWorkingPlace"), pd.get("isUnitQuarter"), w))
+                         pd.get("isWorkingPlace"), pd.get("isUnitQuarter"), mark))
 
 
 if __name__ == "__main__":

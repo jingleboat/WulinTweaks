@@ -263,6 +263,17 @@ Animator.SetFloat("IsBath", swim ? 1 : 0); 影子隐藏; 移速 = CharMoveSpeedI
 - 把 id 填进去（或运行时替换返回值）→ **该 NPC 的落点被放进水域格**。实测：叶云 10033 从 `(36,17)`
   陆地变成 `(21,32)` 水域格。**它只改落点，不管入水状态和动作。**
 
+
+### 手机端的落地结论（2026-10-26，v112~v123）
+
+同一套判定在手机上也成立，但「把 NPC 放进水里」要绕开几个坑（详见 `wulin-apk/README.md` 的对应章节）：
+
+- 手机端**不读** `ForceNPCSwim`（PC 读，手机零调用）；
+- `CreateRoleMar.CreateNpc` 有 8 个参数，改它的入参会闪退；
+- `GameCharacterInstance.SetPos` / `SetMapId` 的**内联钩子构造失败**，改不了；
+- `SetPos` 只改实例数据，画面上的 `Role` 不动 → 必须用 **`Role.NpcTP(Vector3Int)`** 真传送；
+- 进水里之后**静止播 `WashStand1`（泡水坐姿）、走动才播 `WashMove1`（游泳）**——PC 与手机动作/贴图集完全一致，所谓「手机版把水中资源改了」不成立。
+
 ### 5. 复现用的离线工具（`tools/`）
 
 `dump_swimgrid.py`（读 prefab 的 `_SwimGrid`）、`dump_map_tree.py`（prefab 层级）、
