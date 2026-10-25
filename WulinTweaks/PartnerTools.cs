@@ -181,11 +181,12 @@ namespace WulinTweaks
                 }
                 if (st == null) return;
 
+                /* 回程点缺省 = -1（与存档里主角/队友的默认形态一致：map -1 + 0,0,0 + dir 0） */
                 if (st.leaveTeamMap <= 0)
                 {
-                    try { st.leaveTeamMap = inst.CurMapId; } catch { }
-                    try { st.leaveTeamPos = inst.CurPos; } catch { }
-                    try { st.leaveTeamDir = inst.Dir; } catch { }
+                    try { st.leaveTeamMap = -1; } catch { }
+                    try { st.leaveTeamPos = new UnityEngine.Vector3Int(0, 0, 0); } catch { }
+                    try { st.leaveTeamDir = 0; } catch { }
                 }
             }
             catch (Exception e) { Plugin.L.LogWarning("[join] 队友状态失败: " + e.Message); }
