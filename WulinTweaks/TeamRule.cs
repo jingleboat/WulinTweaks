@@ -67,7 +67,15 @@ namespace WulinTweaks
 
         private static int _logRelaxOnce;
 
-                internal static string GraphNameOf(IntPtr condNode)
+                /// <summary>放宽带外的「固定图」：改用正则 —— ^Guide10099-（整族师父线）+ ^Fame-2$（仅这一张）。
+        /// 烈酒与故事(R10112-2)、伙伴的故事(R20004-6) 已从名单移除，交给「每图只放宽一次」兜底。</summary>
+        private static readonly System.Text.RegularExpressions.Regex _fixedRe =
+            new System.Text.RegularExpressions.Regex(@"^(Guide10099-|Fame-2$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+        internal static bool IsFixedName(string gn)
+            => !string.IsNullOrEmpty(gn) && _fixedRe.IsMatch(gn);
+
+        internal static string GraphNameOf(IntPtr condNode)
         {
             try
             {

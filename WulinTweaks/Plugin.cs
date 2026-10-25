@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.24";  // 1.11.24 放宽改为「同一剧情只放宽一次」；删除固定名单
+        public const string Version = "1.11.25";  // 1.11.25 固定图改正则(^Guide10099-|^Fame-2$)；移除烈酒/伙伴名单
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
