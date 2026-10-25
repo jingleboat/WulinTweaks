@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.25";  // 1.11.25 固定图改正则(^Guide10099-|^Fame-2$)；移除烈酒/伙伴名单
+        public const string Version = "1.11.26";  // 1.11.26 固定图正则加回 R20004-6（用户要求）
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
