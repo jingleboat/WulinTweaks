@@ -87,6 +87,11 @@
       <HintPath>$(InteropDir)\UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <!-- 控制台指令 join：强类型读 ConsoleUI.textInput.text（TMP_InputField） -->
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(InteropDir)\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.UI">
       <HintPath>$(InteropDir)\UnityEngine.UI.dll</HintPath>
       <Private>false</Private>
@@ -111,6 +116,7 @@
       <HintPath>$(InteropDir)\GamePlugins.InspectorEnhance.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
+
   </ItemGroup>
 
 </Project>

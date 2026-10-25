@@ -7,12 +7,14 @@ using XNode;
 namespace WulinTweaks
 {
     /// <summary>
-    /// 「需要伙伴」条件的判定规则，供 dobby hook 调用。
+    /// «需要伙伴»条件的判定规则，供 dobby hook 调用。
     ///   partnerID != 图名角色id        -> 放宽（别的角色的彩蛋）
     ///   partnerID == 图名角色id 且未入队 -> 不放宽（走原版）
-    ///   本命角色入过队 / 读不到          -> 放宽
+    ///   本命角色入过队 / 读不到          -> 放宽（人不在队也照演，这是要保留的功能）
+    ///   **图里含「结缘界面」**           -> 一律不放宽（v1.11.19）：那类图收尾要写情缘/武功/buff，
+    ///                                      人不在队会写到临时实例上 → 人物数据分裂
     /// 固定名单（主线/师父线）与手动名单 -> 不放宽
-    /// PC 版 partnerID 偏移 = 0x48，graph = 0x18，m_TeamMemberState = 0x130。
+    /// PC 版 partnerID 偏移 = 0x48，Negate = 0x4C，graph = 0x18，m_TeamMemberState = 0x130。
     /// </summary>
     internal static class TeamRule
     {
@@ -101,9 +103,82 @@ namespace WulinTweaks
                 if (!m.Success) return true;                        // 非角色剧情图：放宽
                 int selfId = int.Parse(m.Groups[1].Value);
                 if (pid != selfId) return true;                     // 别的角色：放宽
+
+                // ★ 结缘图（图里有「结缘界面」节点）**不放宽**。
+                //   这类图的收尾会写人物数据：`激活NPC情缘`（SetBond 双向写）、`获得武功或绝学`（武功）、
+                //   buff 85xx/89xx/88xx、`改变NPC关系值`。她不在队/实例不唯一时这些写入会落到临时实例上，
+                //   人物数据就分裂了 —— 所以这类图直接跳过放宽，让原版判定"必须在队"生效。
+                //   其余本命图（个人剧情）继续放宽：人不在队也照演，这是要保留的功能。
+                if (IsBondGraph(condNode, gn))
+                {
+                    if (_logBond++ < 20)
+                        Plugin.L.LogInfo("[team] 图 " + gn + " 含「结缘界面」→ 跳过放宽（按原版：必须在队）");
+                    return false;
+                }
+
                 return !IsNeverJoined(pid);                         // 本命 + 未入队 -> 不放宽
             }
             catch (Exception e) { ModKit.Err("team rule", e); return true; }
+        }
+
+        private static int _logBond;
+
+        // ---------------------------------------------------------------- 结缘图判定
+        /// <summary>已知的 12 张结缘图（扫描失败时的兜底；新增/DLC 的靠节点扫描发现）。</summary>
+        private static readonly HashSet<string> _knownBond = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "R10008-5", "R10009-6", "R10039-9", "R10052-3", "R10056-4", "R10064-6",
+            "R10081-3", "R10084-5", "R10092-4", "R10108-3", "R20025-11", "R20063-2",
+        };
+
+        /// <summary>图指针 → 是否结缘图（只扫一次）。</summary>
+        private static readonly Dictionary<IntPtr, bool> _bondGraphCache = new Dictionary<IntPtr, bool>(128);
+
+        /// <summary>
+        /// 这张图里有没有「结缘界面」节点（`ShowUIBondsNode`）。
+        /// 做法：拿 graph → `nodes` 列表，逐个节点问 IL2CPP 类名；命中即结缘图。
+        /// 类名读不到时退回 12 张已知图名。
+        /// </summary>
+        private static bool IsBondGraph(IntPtr condNode, string gn)
+        {
+            IntPtr graph = IntPtr.Zero;
+            try { graph = Hooks.SafeMem.Ptr(condNode, OFF_GRAPH); } catch { }
+
+            if (graph != IntPtr.Zero && _bondGraphCache.TryGetValue(graph, out var cached)) return cached;
+
+            bool hit = false;
+            bool scanned = false;
+            try
+            {
+                Il2CppNative.Init();                       // 与 BranchFlatten 一样：用字段解析前先 Init
+                if (graph != IntPtr.Zero && Il2CppNative.Ready)
+                {
+                    IntPtr list = Il2CppNative.Ptr(graph, "nodes");
+                    int n = list == IntPtr.Zero ? 0 : Il2CppNative.ListCount(list);
+                    if (n > 0 && n <= 4096)
+                    {
+                        scanned = true;
+                        for (int i = 0; i < n; i++)
+                        {
+                            IntPtr nd = Il2CppNative.ListItem(list, i);
+                            if (nd == IntPtr.Zero) continue;
+                            string cn = Il2CppNative.ClassNameOf(nd);
+                            if (cn == "ShowUIBondsNode") { hit = true; break; }
+                        }
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                if (_logBond++ < 20) Plugin.L.LogWarning("[team] 扫图失败（" + gn + "）→ 退回图名表: " + e.Message);
+                scanned = false;
+            }
+
+            if (!scanned) hit = _knownBond.Contains(gn);      // 扫不了：按已知 12 张
+            else if (!hit) hit = false;
+
+            if (graph != IntPtr.Zero) _bondGraphCache[graph] = hit;
+            return hit;
         }
 
         /// <summary>

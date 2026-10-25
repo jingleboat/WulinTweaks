@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.10";  // 1.11.10 固定名单只保留 R20004-6（Fame-6 撤销）；清掉逐次判定/取名的诊断日志
+        public const string Version = "1.11.22";  // 1.11.22 join：改回强类型读 textInput（反射读不到文本导致「指令无效」）
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -65,7 +65,15 @@ namespace WulinTweaks
                 "马车地图所有地点解锁、图标全部可见");
 
             IgnoreTeamCondition = Config.Bind("3_Story", "IgnoreTeamMemberCondition", false,
-                "剧情触发时忽略「队伍中是否存在某角色」条件");
+                "剧情触发时忽略「队伍中是否存在某角色」条件。含「结缘界面」的图**不会**被放宽"
+                + "（那类图收尾要写情缘/武功/buff，人不在队会写坏人物数据），其余本命图照常放宽；"
+                + "不动队伍、不做临时入队");
+
+            FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
+                "剧情分支展开的**排除名单**（逗号分隔；末尾带 * 按前缀匹配）。"
+                + "留空 = 所有剧情图都按通用规则展开。"
+                + "遇到某张图播得不对（比如两侧是互斥剧情、展开后自相矛盾），把它的图名填进来重启即可；"
+                + "图名就是剧情资产名，例如 R10049-2。");
 
 FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
                 "剧情分支展开的**排除名单**（逗号分隔；末尾带 * 按前缀匹配）。"
@@ -157,6 +165,11 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
 
             // ⑪ 剧情收尾：StoryCloseNode 执行结果时还原姓名（v1.10.4 的事件驱动窗口终点）
             SafePatch(typeof(Patch_StoryClose), "StoryCloseNode.OnResult(剧情收尾)");
+
+            // ⑫ 控制台指令 `join <人物ID|人物名> [1]`（静默：不写任何界面文字）
+            SafePatch(typeof(Patch_ConsoleJoinInternal), "ConsoleUI.InvokeCommandInternal(join)");
+            SafePatch(typeof(Patch_ConsoleJoinTyped), "ConsoleUI.InvokeCommand(string)(join)");
+            SafePatch(typeof(Patch_ConsoleJoinNoArg), "ConsoleUI.InvokeCommand()(join)");
 
             L.LogInfo("[WulinTweaks] v" + Version + " loaded. data dir = " + DataDir);
         }
