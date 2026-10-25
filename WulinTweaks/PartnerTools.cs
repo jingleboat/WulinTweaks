@@ -204,7 +204,14 @@ namespace WulinTweaks
                 var tm = PlayerTeamManager.Instance;
                 var me = tm == null ? null : tm.PlayerDataInstance;
                 if (me != null)
-                    inst.SetBond(me.InstanceId, (uid == 20025 || uid == 20063) ? BondType.Husband : BondType.Wife, true);
+                {
+                    /* 方向口径（存档实证）：她那一侧永远是「主角是什么身份」——
+                     * 女角色 → Husband(1)，男角色 → Wife(2)；主角那一侧相反（alsoSetOther 自动写）。
+                     * 旧代码按 uid 硬编码 20025/20063 是错的：其余女角色会被写成 Wife(2)。 */
+                    bool female = true;
+                    try { female = inst.Templete == null || (int)inst.Templete.Sex != 1; } catch { }
+                    inst.SetBond(me.InstanceId, female ? BondType.Husband : BondType.Wife, true);
+                }
             }
             catch (Exception e) { Plugin.L.LogWarning("[join] SetBond 失败: " + e.Message); }
 
