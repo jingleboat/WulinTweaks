@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.23";  // 1.11.23 times 压制去掉 R 图整族豁免（修本命图循环触发）
+        public const string Version = "1.11.24";  // 1.11.24 放宽改为「同一剧情只放宽一次」；删除固定名单
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

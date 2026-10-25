@@ -31,22 +31,6 @@ namespace WulinTweaks
         private static readonly Regex _rId = new Regex(@"^R(\d{5})-", RegexOptions.Compiled);
         private static readonly Dictionary<int, KeyValuePair<bool, float>> _nj = new Dictionary<int, KeyValuePair<bool, float>>();
 
-        private static readonly HashSet<string> _fixed = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Fame-2",
-            "Guide10099-1",                                     // 2026-10-21 追加：与 6/11/13… 同属师父线
-            "Guide10099-6", "Guide10099-11", "Guide10099-13",
-            "Guide10099-15", "Guide10099-16", "Guide10099-18",
-            // 2026-10-21 追加：烈酒与故事。图里 8 条「需要伙伴」全是别人的角色
-            // （10008/10009/10005/10015），按彩蛋规则会被放宽 → 剧情提前播出。
-            // 用户要求压回原版：那些角色不在队就不该演。
-            "R10112-2",
-            // ---- 2026-10-23 追加（用户点名）----
-            // 伙伴的故事 / 包打听(20004)：图里对花四娘(20025)的「需要伙伴」属于「别的角色」
-            // → 按彩蛋规则必放宽；而图里有 3 个 ChangePartnerNode(state=1, partnerID=20004)
-            // = 把包打听踢出队。放宽后这段在不该播的时候播了（结缘花四娘 + 同队时"包打听离队"）。
-            "R20004-6",
-        };
 
         /// <summary>
         /// 该剧情图是否属于「不做 Hold 压制」的例外：
@@ -57,7 +41,6 @@ namespace WulinTweaks
         {
             if (string.IsNullOrEmpty(gn)) return false;
             if (_rId.IsMatch(gn)) return true;
-            if (_fixed.Contains(gn)) return true;
             try { return Plugin.IsStoryBlacklisted(gn); } catch { return false; }
         }
 
@@ -66,11 +49,25 @@ namespace WulinTweaks
         internal static bool IsHoldGuardExempt(string gn)
         {
             if (string.IsNullOrEmpty(gn)) return false;
-            if (_fixed.Contains(gn)) return true;
             try { return Plugin.IsStoryBlacklisted(gn); } catch { return false; }
         }
 
-        internal static string GraphNameOf(IntPtr condNode)
+        /// <summary>v1.11.24：同一张剧情图**只放宽一次**。第二次起走原版（剧情已播过，原版不会再放行）。
+        /// 这就是「times 压制」真正该管的东西 —— 压制放宽本身，而不是压制 Hold 的通过。</summary>
+        private static readonly HashSet<string> _relaxedOnce = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        private static bool RelaxOnce(string gn)
+        {
+            if (string.IsNullOrEmpty(gn)) return true;
+            if (_relaxedOnce.Add(gn)) return true;          // 第一次：放宽
+            if (_logRelaxOnce++ < 12)
+                Plugin.L.LogInfo("[relax] 图 " + gn + " 已放宽过一次 → 本次走原版");
+            return false;
+        }
+
+        private static int _logRelaxOnce;
+
+                internal static string GraphNameOf(IntPtr condNode)
         {
             try
             {
@@ -103,15 +100,14 @@ namespace WulinTweaks
                 int pid = Hooks.SafeMem.Int32(condNode, OFF_PARTNER_ID);
 
                 if (string.IsNullOrEmpty(gn)) return true;
-                if (_fixed.Contains(gn)) return false;
                 if (Plugin.IsStoryBlacklisted(gn)) return false;
 
-                if (pid <= 0) return true;
+                if (pid <= 0) return RelaxOnce(gn);
 
                 var m = _rId.Match(gn);
-                if (!m.Success) return true;                        // 非角色剧情图：放宽
+                if (!m.Success) return RelaxOnce(gn);                // 非角色剧情图：放宽（每图一次）
                 int selfId = int.Parse(m.Groups[1].Value);
-                if (pid != selfId) return true;                     // 别的角色：放宽
+                if (pid != selfId) return RelaxOnce(gn);             // 别的角色（彩蛋）：放宽（每图一次）
 
                 // ★ 结缘图（图里有「结缘界面」节点）**不放宽**。
                 //   这类图的收尾会写人物数据：`激活NPC情缘`（SetBond 双向写）、`获得武功或绝学`（武功）、
@@ -125,7 +121,8 @@ namespace WulinTweaks
                     return false;
                 }
 
-                return !IsNeverJoined(pid);                         // 本命 + 未入队 -> 不放宽
+                if (IsNeverJoined(pid)) return false;                // 本命 + 未入队 -> 不放宽
+                return RelaxOnce(gn);                                // 本命 + 入过队 -> 放宽（每图一次）
             }
             catch (Exception e) { ModKit.Err("team rule", e); return true; }
         }
