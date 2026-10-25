@@ -199,6 +199,11 @@ python tools/simulate_flatten.py --only R20025-11 --detail   # 门对 3，B 类 
 | `_SwimGrid`（2160） | 177 | x 63~80，y 85~100（就是 504 第二个池子） |
 | `_SwimLadder` | 8 / 2 | 上岸点 |
 
+> 手机端：**原版 APK 的地图 prefab 里也有这两层**（`assets/aa/Android/prefabs_map_assets_assets/_artwork/map/prefab/map_504.prefab.bundle`
+> 里 `_SwimGrid` = 760 格、`_SwimLadder` = 8 格；map_2160 = 177 / 2 格），与 PC 逐格一致。
+> 但早期设备探针曾看到「运行期地图实例没有这两个图层」，两者是否矛盾要靠 v112/v113 的运行期日志
+> （`[water] ME.IsSwimGrid(x,y) 原值=…`）来定：出现 `原值=1` 就说明原版手机本来就认水域格。
+
 官方 mod 编辑器文档原话：**「温泉场景实际有单独的一个地格图层控制地格属性，只有地图编辑器配置了的地格
 才算作水域……并不是玩家看到是水的地方就是水域。」**
 
