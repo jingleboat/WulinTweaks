@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.22";  // 1.11.22 join：改回强类型读 textInput（反射读不到文本导致「指令无效」）
+        public const string Version = "1.11.23";  // 1.11.23 times 压制去掉 R 图整族豁免（修本命图循环触发）
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

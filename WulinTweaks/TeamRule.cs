@@ -61,6 +61,15 @@ namespace WulinTweaks
             try { return Plugin.IsStoryBlacklisted(gn); } catch { return false; }
         }
 
+        /// <summary>Hold 压制层的例外：只认真白名单（固定名单 + 手动名单），不再豁免整族 R 图。
+        /// R 图的重复触发就是 times 压制该管的事（例如苗彩蝶 10005 的 R10005-*）。</summary>
+        internal static bool IsHoldGuardExempt(string gn)
+        {
+            if (string.IsNullOrEmpty(gn)) return false;
+            if (_fixed.Contains(gn)) return true;
+            try { return Plugin.IsStoryBlacklisted(gn); } catch { return false; }
+        }
+
         internal static string GraphNameOf(IntPtr condNode)
         {
             try
