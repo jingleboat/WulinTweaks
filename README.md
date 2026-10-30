@@ -203,6 +203,18 @@ python tools/simulate_flatten.py --only R20025-11 --detail   # 门对 3，B 类 
 
 ---
 
+## 1.11.27 / 1.11.30–1.11.31 备忘
+
+| 版本 | 改动 |
+|---|---|
+| **1.11.27** | 修 `NativeTeamHook.Dispatch` 没检查总开关：配置里关掉「忽略队伍角色条件」后，`RelaxName`/`HoldOnceGuard`/`Patch_ChangePartner` 都被挡住，唯独这一层仍在用基类实现顶替原版判定。现在开关关闭即直接走原版。（`BranchFlatten.Try` 仍在 gate 之前，它有自己的开关） |
+| **1.11.30** | 地图三合一：新增 `Plugin.MapMaster = UnlockWorldMap || UnlockCabMap`，`IsPassIcon` / 马车 `Update` / `MapTrueUnlock` 都改用它 |
+| **1.11.31** | 面板合并：去掉「马车地图全解锁」独立行，改为一行「地图解锁（大地图＋马车＋存档）」，拨动即同时设两个开关并 `MapTrueUnlock.Reset()` |
+
+> 手机端 v130/v131 と同じ「真解锁」：`MapTrueUnlock` 会反射找 `SaveObjectMapManager`，
+> 把 343 个地点 id 写进 `listShowIcon`。手机端因为不能安全调泛型 `List.Add`，
+> 改成整份重建 `_items` 数组，细节见 `wulin-apk/README.md`。
+
 ## 大地图「真解锁」（1.11.29）
 
 从 1.9.x 起，「大地图地区与地点全解锁」只改**显示层**：Harmony 把
