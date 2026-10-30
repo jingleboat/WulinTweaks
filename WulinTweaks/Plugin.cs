@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.30";  // 1.11.30 地图三合一：大地图 / 马车 / 存档真解锁共用一个总开关（MapMaster）
+        public const string Version = "1.11.31";  // 1.11.31 面板地图两行合并为一行「地图解锁」
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

@@ -134,10 +134,15 @@ namespace WulinTweaks
             });
 
             Header("[2] 地图");
-            Row("大地图地区与地点全解锁", () => Plugin.UnlockWorldMap.Value,
-                v => Plugin.UnlockWorldMap.Value = v);
-            Row("马车地图全解锁", () => Plugin.UnlockCabMap.Value,
-                v => Plugin.UnlockCabMap.Value = v);
+            /* 1.11.31：两行合并成一行「地图解锁」—— 大地图图标 + 马车地图 + 存档真解锁
+             * （MapMaster 读的是这两个开关的或，所以一起设值即可，老 cfg 里的
+             *  UnlockCabMap 仍然兼容） */
+            Row("地图解锁（大地图＋马车＋存档）", () => Plugin.MapMaster, v =>
+            {
+                Plugin.UnlockWorldMap.Value = v;
+                Plugin.UnlockCabMap.Value = v;
+                if (v) MapTrueUnlock.Reset();
+            });
 
             Header("[3] 剧情");
             Row("忽略队伍角色条件", () => Plugin.IgnoreTeamCondition.Value, v =>
