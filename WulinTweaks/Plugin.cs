@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.27";  // 1.11.27 修：原生条件 hook 没看总开关，关掉「忽略队伍角色条件」后仍在顶替判定
+        public const string Version = "1.11.28";  // 1.11.28 新增 3_Story/FiefReadyList：读档后自动给指定 uid 补「可入家园」（CTMED 是运行时配置，存档里没有这个字段）
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -31,6 +31,7 @@ namespace WulinTweaks
         internal static ConfigEntry<bool> FlattenBranches;
         internal static ConfigEntry<string> FlattenBlacklist;
         internal static ConfigEntry<string> StoryBlacklist;
+        internal static ConfigEntry<string> FiefReadyList;
 
         // ④ 易物
         // 默认全关；面板上改动会立即写进 cfg，下次启动沿用上次状态。
@@ -94,6 +95,12 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
                 + "留空 = 所有剧情都照常放宽。"
                 + "已知对照：R10005-11=苗彩蝶(uid 10005) 那段循环；"
                 + "R10028-7=一醉方休，R10025-6=杯中明镜，R10112-2=烈酒与故事（需要时自行加上）");
+
+            FiefReadyList = Config.Bind("3_Story", "FiefReadyList", "",
+                "读档/换图后自动给这些人物补「可入家园」（逗号分隔的 uid，例如 10142,10143）。"
+                + "用来治 10142/10143 这类**不在 CharacterTeamMemberExtendData 表里**的角色："
+                + "那张表是运行时配置（SerializedScriptableObject），存档里根本没有这个字段 —— "
+                + "所以没法写进存档，只能每次启动补一遍；留空 = 什么都不做。");
 
             TradeAlwaysWin = Config.Bind("4_Trade", "AlwaysWin", false,
                 "易物「通吃」总开关：玩家方作价永远 >= NPC 方，NPC 一律接受；"

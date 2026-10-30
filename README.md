@@ -203,6 +203,43 @@ python tools/simulate_flatten.py --only R20025-11 --detail   # 门对 3，B 类 
 
 ---
 
+## 家园可入：`FiefReadyList`（1.11.28）
+
+**问题**：10142、10143 这类角色 `join` 之后仍放不进家园；而且「可入家园」改完当次有效、重启就没了。
+
+**为什么不能写进存档**：家园判定读的是 `CharacterTeamMemberExtendData.CouldBackToFief`（偏移 `0x50`），
+而 `CharacterTeamMemberExtendData` 是 `SerializedScriptableObject` **配置表**，不属于任何 `SaveObject` ——
+Save0 的 16 个 `.save` 全搜过，`couldBackToFief` 出现 **0 次**。它是天生内存态的。
+
+三件套里另外两件本来就是存档数据（写一次就留住）：
+
+| # | 条件 | 落在哪 |
+|---|---|---|
+| ① | `CharacterTeamMemberExtendData.CouldBackToFief` | **运行时配置**（每次启动都得补） |
+| ② | `m_TeamMemberState.leaveTeamMap/Pos/Dir` | 存档 |
+| ③ | 故事标签 `UnlockInviting-<uid>` | 存档 `TagString` |
+
+而 10140–10145 连 `CharacterPoolData` 里都没有（DLC 角色），CTMED 表只有 90 行（本体伙伴），
+`GetData(uid)` 必然 null —— 光靠 `join` 给的那次内存态，一重启就回到进不去。
+
+**做法**：cfg 增加白名单，每次读档/换图后自动补一遍，效果等于持久。
+
+```ini
+[3_Story]
+FiefReadyList = 10142,10143
+```
+
+- 实现：`FiefAuto.cs`，挂在 `MapManager.OnLoadMapComplated` 之后（`Hooks.MapLoaded`）；
+- 对每个 uid 调 `PartnerTools.FiefReady()` —— 有行就置真，没行就 `AddData` 造行；
+- 只补「已经当过队友」的（`TeamMemberState != null`），其余等入队后再补（最多重试 60 次）；
+- 日志：`[fief] 白名单 2 个：10142,10143` → `[fief] 家园可入补完：2/2`。
+
+手机端 v124 是同一套逻辑的 native 版（还多一步「取配置对象要走
+`BaseDataClass.GetGameDataInternal`，因为它类在 `GameData` 命名空间、且 `FindObjectOfType` 摸不到」），
+细节见 `wulin-apk/README.md` 的「家园可入」一节。
+
+---
+
 ## 水域 / 入水机制（技术归档，2026-10-25）
 
 > 起因：用户发现「PC 上女角色进华清泉(504)会走进水池，手机端不会」。这一节是查完的结论，

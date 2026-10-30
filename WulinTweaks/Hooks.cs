@@ -102,6 +102,8 @@ namespace WulinTweaks
                     ModKit.UnlockWorldMapTick();
                     // v1.10.4：换图/读档后把姓名窗口收干净（剧情里换图的场景，下一节点会重新开）
                     RelaxName.EndNow();
+                    // v1.11.28：家园「可入」白名单（CTMED 是运行时配置，重启即失效，只能每次补）
+                    FiefAuto.Tick();
                 }
                 catch (Exception e) { ModKit.Err("hook mapLoaded", e); }
             }
