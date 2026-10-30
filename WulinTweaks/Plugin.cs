@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.26";  // 1.11.26 固定图正则加回 R20004-6（用户要求）
+        public const string Version = "1.11.27";  // 1.11.27 修：原生条件 hook 没看总开关，关掉「忽略队伍角色条件」后仍在顶替判定
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

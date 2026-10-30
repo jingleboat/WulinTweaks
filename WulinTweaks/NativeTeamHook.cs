@@ -120,7 +120,17 @@ namespace WulinTweaks
             // v1.10.0：剧情分支展开 —— 顺手在目标图上套补丁（除首次命中，其余只是一次哈希查找）。
             // 门的「无条件判真」不在这里做：PC 版认不出 conditionPort 连着的条件节点
             // （那个 ConditionPort 是空壳），改成按门指针判断，见 Patch_FlattenGate。
+            // 注意：它有自己的开关（FlattenBranches），与本函数的总开关无关，所以放在 gate 之前。
             try { BranchFlatten.Try(self); } catch { }
+
+            /* v1.11.27 修 bug：这里原来**没有**检查总开关。
+             * 后果：配置里把「剧情触发时忽略队伍角色条件」(IgnoreTeamMemberCondition) 关掉之后，
+             * RelaxName / HoldOnceGuard / Patch_ChangePartner 都被开关挡住了，
+             * 唯独这一层还在按 TeamRule.ShouldRelax() 用基类实现顶掉原版判定 ——
+             * 也就是「关掉放宽」根本关不干净，剧情条件仍然被 mod 接管。
+             * 现在一律先看开关：关着就直接执行原版子类实现。 */
+            if (Plugin.IgnoreTeamCondition == null || !Plugin.IgnoreTeamCondition.Value)
+                return orig != null ? orig(self, io, line) : true;
 
             bool relax;
             try { relax = TeamRule.ShouldRelax(self); }
