@@ -193,7 +193,7 @@ namespace WulinTweaks
 
             static void Postfix(ref bool __result)
             {
-                try { if (Plugin.UnlockCabMap.Value) __result = true; }
+                try { if (Plugin.MapMaster) __result = true; }
                 catch (Exception e) { ModKit.Err("hook cabIsPassIcon", e); }
             }
         }

@@ -60,7 +60,7 @@ namespace WulinTweaks
 
         internal static void Tick()
         {
-            if (Plugin.UnlockWorldMap == null || !Plugin.UnlockWorldMap.Value) return;
+            if (!Plugin.MapMaster) return;   /* v1.11.30：地图三合一总开关 */
             if (_done) return;
 
             object so = FindSaveObject();

@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.29";  // 1.11.29 大地图改「真解锁」：343 个地点图标真写进存档 listShowIcon（剧情「判断大地图图标显示」读的是这份数据）
+        public const string Version = "1.11.30";  // 1.11.30 地图三合一：大地图 / 马车 / 存档真解锁共用一个总开关（MapMaster）
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -25,6 +25,12 @@ namespace WulinTweaks
         // ② 大地图 / 马车地图
         internal static ConfigEntry<bool> UnlockWorldMap;
         internal static ConfigEntry<bool> UnlockCabMap;
+
+        /// <summary>v1.11.30：地图三合一的总开关 —— 大地图 / 马车地图 / 存档真解锁，
+        /// 打开任意一个地图开关都按「全解锁」处理。</summary>
+        internal static bool MapMaster
+            => (UnlockWorldMap != null && UnlockWorldMap.Value)
+               || (UnlockCabMap != null && UnlockCabMap.Value);
 
         // ③ 剧情
         internal static ConfigEntry<bool> IgnoreTeamCondition;

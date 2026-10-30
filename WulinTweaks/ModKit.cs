@@ -337,7 +337,7 @@ namespace WulinTweaks
         // ---------- ②b 马车地图 ----------
         internal static void ForceCabIconsNow(UICabMapManager mgr)
         {
-            if (!Plugin.UnlockCabMap.Value) return;
+            if (!Plugin.MapMaster) return;
             if (!Truthy(mgr)) return;
 
             int shown = 0, total = 0;
