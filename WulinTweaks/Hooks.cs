@@ -104,6 +104,8 @@ namespace WulinTweaks
                     RelaxName.EndNow();
                     // v1.11.28：家园「可入」白名单（CTMED 是运行时配置，重启即失效，只能每次补）
                     FiefAuto.Tick();
+                    // v1.11.29：大地图「真解锁」—— 把 343 个地点图标真写进存档 listShowIcon
+                    MapTrueUnlock.Tick();
                 }
                 catch (Exception e) { ModKit.Err("hook mapLoaded", e); }
             }

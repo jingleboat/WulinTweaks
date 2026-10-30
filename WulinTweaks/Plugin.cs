@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.28";  // 1.11.28 新增 3_Story/FiefReadyList：读档后自动给指定 uid 补「可入家园」（CTMED 是运行时配置，存档里没有这个字段）
+        public const string Version = "1.11.29";  // 1.11.29 大地图改「真解锁」：343 个地点图标真写进存档 listShowIcon（剧情「判断大地图图标显示」读的是这份数据）
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

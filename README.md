@@ -203,6 +203,28 @@ python tools/simulate_flatten.py --only R20025-11 --detail   # 门对 3，B 类 
 
 ---
 
+## 大地图「真解锁」（1.11.29）
+
+从 1.9.x 起，「大地图地区与地点全解锁」只改**显示层**：Harmony 把
+`UIWorldMapManager.IsMapEnable` 判真、`UIWorldMap.SetCityVisible` 强制 `isShow=true`、
+再把 `CityIcon` 子节点 `SetActive(true)` —— 存档里的 `SaveObjectMapManager.listShowIcon` 一直没变。
+
+而剧情节点「判断大地图图标显示 mapID=X」读的正是那份**存档数据**，于是会出现
+「图标看着是亮的，剧情门永远判不过」的死循环（曼陀罗 `R10021-4` 卡玉门关 5059、
+`M2221-12`「问路」卡炎城 20400 就是这么来的）。
+
+1.11.29 起改成真写：`MapTrueUnlock.cs` 在 `MapManager.OnLoadMapComplated` 之后，
+把「大地图可显示的地点图标」全集（`LocData` 里全部 `WMapName_<id>`，**343 个**）
+逐个 `Add` 进 `listShowIcon`；取存档对象用反射按类型名找（`UIWorldMapManager` /
+`MapManager` 里搜 `SaveObjectMapManager`），成员名取 `listShowIcon`，找不到就记一条日志跳过。
+游戏一存盘就是永久解锁。
+
+开关仍是 `2_WorldMap / UnlockAll`：打开＝真解锁 + 显示层补丁；关掉＝什么都不做。
+日志：`[map] 大地图真解锁：listShowIcon +N（目标 343 个）`。
+
+> 注意：真解锁之后，所有 `Negate=1`（要求「该图标未显示」）的剧情分支都会判假。
+> 这是"真解锁"的固有代价，不是 bug。
+
 ## 家园可入：`FiefReadyList`（1.11.28）
 
 **问题**：10142、10143 这类角色 `join` 之后仍放不进家园；而且「可入家园」改完当次有效、重启就没了。
