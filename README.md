@@ -149,6 +149,26 @@ python tools/simulate_flatten.py --only R10049-2 --detail   # 单图：逐条列
 > 而且改变了"人不在队也照演"的语义。**1.11.19 整个删掉了**，
 > cfg `3_Story / JoinAbsentPartner` 也一并移除（老 cfg 里留着那行无害）。
 
+### 「结缘图」是按什么认出来的（可复验）
+
+| 层 | 依据 | 覆盖范围 |
+|---|---|---|
+| 运行时（主判据） | 拿 `graph.nodes` 逐个问 `il2cpp_class_get_name`，命中 `ShowUIBondsNode` 即结缘图（按图指针缓存，只扫一次） | 全量剧情，含 DLC/后续新增——**不依赖名单** |
+| 兜底（扫不到时） | `TeamRule._knownBond` 写死的 12 张图名 | 仅当 `Il2CppNative` 未就绪/抛异常（日志 `扫图失败 → 退回图名表`） |
+
+「结缘界面」这个编辑器节点名 = 运行时类 `ShowUIBondsNode`：`ModEditor.zip` 里该节点的
+`m_Script` guid 指向 `ModShare.Runtime.dll`，字段只有 `SaveID` / `IsSaveNode` / `partnerID`
+（`partnerID` 值恒等于图名里的角色 id）。
+
+```powershell
+python tools/find_bond_graphs.py            # 全 1804 张剧情图里含「结缘界面」的正好 12 张，与 _knownBond 一致
+python tools/find_bond_graphs.py --all      # 各节点类型的命中图数（对比判据用）
+```
+
+> 为什么不用旁边的「激活NPC情缘」：它出现在 **24** 张图里（`R10005-10`、`R10028-7`、`R10049-11`
+> 等正常线也有），拿它当判据会把能放宽的个人剧情一起排除；「结缘界面」正好只落在配了结缘 UI 的
+> 12 张收尾图上，最精确。反过来 12 张结缘图**全部**含「激活NPC情缘」，两者是包含关系。
+
 离线核对 12 张结缘图的形状：
 
 ```powershell
