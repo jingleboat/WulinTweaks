@@ -110,7 +110,10 @@ namespace WulinTweaks
                 _traceN++;
                 string gn = null;
                 try { gn = node.graph == null ? null : node.graph.name; } catch { }
+                bool inTeam;
+                int pid = BranchFlatten.GatePid(p, out inTeam);
                 Plugin.L.LogInfo("[gate] 图=" + (gn ?? "?") + " 门=" + p.ToString("X")
+                                 + " pid=" + pid + " 侧=" + (pid <= 0 ? "?" : (inTeam ? "在队" : "不在队"))
                                  + " forced=" + (BranchFlatten.IsGateForced(p) ? "Y" : "N")
                                  + " → " + (result ? "通过" : "不通过"));
             }

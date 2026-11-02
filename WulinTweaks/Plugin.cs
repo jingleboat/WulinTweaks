@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.48";  // 1.11.48 展开日志补「先问=在队/不在队」+ 补 PC 门轨迹日志
+        public const string Version = "1.11.49";  // 1.11.49 [gate] 补 pid/侧别 + 白名单扩容（判断地图存在NPC / 需要NPC处于家园中）
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

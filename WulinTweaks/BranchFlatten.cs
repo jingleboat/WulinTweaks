@@ -423,6 +423,8 @@ namespace WulinTweaks
                 {
                     _gateForced.Add(p.G0);
                     _gateForced.Add(p.G1);
+                    _gateInfo[p.G0] = new KeyValuePair<int, bool>(p.Pid, true);
+                    _gateInfo[p.G1] = new KeyValuePair<int, bool>(p.Pid, false);
                     try { RelaxName.MarkRelaxed(p.Pid, graphName); } catch { }
 
                     if (_logPair++ < 300)
@@ -448,15 +450,35 @@ namespace WulinTweaks
             return c;
         }
 
-        /// <summary>v1.11.47：这个条件是不是「当前在队」这一类（HavePartnerCondition）。</summary>
+        /// <summary>
+        /// v1.11.49：允许参与展平的条件类。
+        ///   需要伙伴（当前在队） / 判断地图存在NPC / 需要NPC处于家园中。
+        ///   需要NPC情缘**未加入**：R10049-2 里它的下游是 R10049-2_6_6（定海棠出演），
+        ///   绛紫烟本人出演的 _6_7 由「需要伙伴」控制，按用户规则不加。
+        /// </summary>
         private static bool IsInTeamCond(IntPtr cond)
         {
             try
             {
                 string cn = Il2CppNative.ClassNameOf(cond);
-                return cn == "HavePartnerCondition";
+                if (string.IsNullOrEmpty(cn)) return false;
+                return cn == "HavePartnerCondition"        // 需要伙伴
+                    || cn == "NpcAtMapCondition"           // 判断地图存在NPC
+                    || cn == "CheckNpcAtFiefCondition";    // 需要NPC处于家园中
             }
             catch { return false; }
+        }
+
+        /// <summary>v1.11.49：门 → (pid, 是否在队侧)，供 [gate] 轨迹日志打印。</summary>
+        private static readonly Dictionary<IntPtr, KeyValuePair<int, bool>> _gateInfo =
+            new Dictionary<IntPtr, KeyValuePair<int, bool>>();
+
+        internal static int GatePid(IntPtr gate, out bool inTeam)
+        {
+            inTeam = false;
+            KeyValuePair<int, bool> v;
+            if (_gateInfo.TryGetValue(gate, out v)) { inTeam = v.Value; return v.Key; }
+            return 0;
         }
 
         /// <summary>v1.11.47：这一侧的可达集里是否含「播放剧情」节点。</summary>
