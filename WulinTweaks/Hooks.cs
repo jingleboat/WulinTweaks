@@ -442,13 +442,19 @@ namespace WulinTweaks
 
                     __result = false;
 
-                    if (_warned < 8)
+                    if (_warned < 60)          // v1.11.42：8 → 60（诊断用）
                     {
                         _warned++;
                         string nm;
                         try { nm = __instance.name; } catch { nm = "?"; }
-                        Plugin.L.LogInfo("[once] 剧情图 " + (gn ?? "?") + " 的 Hold \"" + nm + "\" times="
-                            + __instance.checkSucessTimes + " 已通过过，压制本次（放宽引起的重复触发）");
+                        // 诊断字段：门指针 / 节点名 / times / 本次判定期间队友条件的增量 / 是否被展平接管
+                        Plugin.L.LogInfo("[once] 图 " + (gn ?? "?")
+                            + " 门=" + __instance.Pointer.ToString("X")
+                            + " name=\"" + nm + "\""
+                            + " times=" + __instance.checkSucessTimes
+                            + " hits=" + __state + "→" + NativeTeamHook.TeamCondHits
+                            + " flatGate=" + (BranchFlatten.IsGateForced(__instance.Pointer) ? "Y" : "N")
+                            + " → 压制");
                     }
                 }
                 catch (Exception e) { ModKit.Err("guard hold once", e); }

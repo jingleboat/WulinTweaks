@@ -285,7 +285,7 @@ namespace WulinTweaks
                 });
             }
 
-            if (pairSkipped > 0 && _logGraph < 40)
+            if (pairSkipped > 0 && _logGraph < 200)
             {
                 _logGraph++;
                 Plugin.L.LogInfo("[flat] 图 " + graphName + " 按门对名单跳过 " + pairSkipped
@@ -328,7 +328,7 @@ namespace WulinTweaks
                 expand.Add(p);
             }
 
-            if (_logGraph++ < 40)
+            if (_logGraph++ < 200)
                 Plugin.L.LogInfo("[flat] 图 " + graphName + "：节点 " + n + "，门对 " + pairs.Count
                                  + "，展开 " + expand.Count + "（B 类 "
                                  + CountB(expand) + "），跳过 重叠" + skippedOverlap
@@ -359,7 +359,7 @@ namespace WulinTweaks
 
                 try { RelaxName.MarkRelaxed(p.Pid, graphName); } catch { }
 
-                if (_logPair++ < 60)
+                if (_logPair++ < 300)
                     Plugin.L.LogInfo("[flat]   pid=" + p.Pid + (p.BothStory ? " (B 类)" : " (A 类)")
                                      + " 在队门=" + Hex(p.G0) + " 不在队门=" + Hex(p.G1)
                                      + " 内容 " + p.Region.Count + " 节点，改线 " + p.Exits.Count
@@ -368,7 +368,7 @@ namespace WulinTweaks
 
             _done.Add(graph);
 
-            if (_logGraph <= 40)
+            if (_logGraph <= 200)
                 Plugin.L.LogInfo("[flat] 图 " + graphName + " 展开完成：改线 " + ok + " 条"
                                  + (fail > 0 ? "，失败 " + fail + " 条" : "")
                                  + "，接管门 " + _gateForced.Count + " 个（累计）");

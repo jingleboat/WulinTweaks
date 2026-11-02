@@ -217,6 +217,7 @@ python tools/simulate_flatten.py --only R20025-11 --detail   # 门对 3，B 类 
 ## 1.11.34 / 1.11.35 备忘
 
 | 版本 | 改动 |
+| **1.11.42** | **只加诊断日志，不改逻辑**：`HoldOnceGuard` 的 `[once]` 行补上 `门=<指针> name=<节点名> times= hits=before→after flatGate=Y/N`，上限 8→60。另：分支展开日志上限 40→200、逐对日志 60→300（1.11.41） |
 | **1.11.40** | **收敛成一句话：随剧情条件放宽一起做 clear(pid)。** ① `Unstranger.Apply(pid)` 从 `NativeTeamHook.MarkRelaxed` 移到 `TeamRule.Compute`，位置在「黑名单 / 场景名单 / 结缘图 / 未入队」等守卫**之后**、`RelaxOnce` **之前** —— `RelaxOnce` 只该限制放宽，不该限制清名字。② `RelaxName.Sync()` 停用（不再写模板真名/不再还原）。现在 mod 只做「清 @」，显示完全交回游戏 |
 | **1.11.39** | **删除回落机制**：① 不再注册 `Patch_RealName` 三层 getter 补丁（`get_FullName` / `get_FullNameWithTitle` / `get_IsUsingStangerName`），显示交回游戏；② `RealNamesOf` 去掉 `inst.RealFullName` 拆分回落，只取模板 `SurName`/`GivenName`；③ `Unstranger` 只清 `m_givenName` 的 `@` |
 |---|---|
