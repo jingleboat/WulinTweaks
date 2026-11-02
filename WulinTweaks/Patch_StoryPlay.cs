@@ -93,13 +93,37 @@ namespace WulinTweaks
     [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
     internal static class Patch_FlattenGate
     {
+        private static readonly System.Collections.Generic.Dictionary<IntPtr, bool> _last =
+            new System.Collections.Generic.Dictionary<IntPtr, bool>();
+        private static int _traceN;
+
+        /// <summary>v1.11.48：门的执行轨迹（只看状态变化，避免热路径刷屏）。</summary>
+        private static void Trace(HoldNode node, bool result)
+        {
+            try
+            {
+                if (node == null || _traceN >= 400) return;
+                IntPtr p = node.Pointer;
+                bool prev;
+                if (_last.TryGetValue(p, out prev) && prev == result) return;
+                _last[p] = result;
+                _traceN++;
+                string gn = null;
+                try { gn = node.graph == null ? null : node.graph.name; } catch { }
+                Plugin.L.LogInfo("[gate] 图=" + (gn ?? "?") + " 门=" + p.ToString("X")
+                                 + " forced=" + (BranchFlatten.IsGateForced(p) ? "Y" : "N")
+                                 + " → " + (result ? "通过" : "不通过"));
+            }
+            catch { }
+        }
+
         private static void Postfix(HoldNode __instance, ref bool __result)
         {
             try
             {
-                if (__result || __instance == null) return;
-                if (!BranchFlatten.IsGateForced(__instance.Pointer)) return;
-                __result = true;
+                if (__instance != null && BranchFlatten.IsGateForced(__instance.Pointer) && !__result)
+                    __result = true;
+                Trace(__instance, __result);
             }
             catch (Exception e) { ModKit.Err("patch flatten gate", e); }
         }

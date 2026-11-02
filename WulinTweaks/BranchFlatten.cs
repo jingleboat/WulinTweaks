@@ -196,6 +196,7 @@ namespace WulinTweaks
             public IntPtr G1;      // Negate = 1（不在队侧）
             public int Pid;
             public bool BothStory; // 两侧都是单节点剧情 = B 类
+            public bool FirstIsG0; // v1.11.48：父端口第一条连接是不是「在队」侧
             public HashSet<IntPtr> Region;
             public List<KeyValuePair<IntPtr, IntPtr>> Exits;  // (源节点, 旧目标)
         }
@@ -297,6 +298,7 @@ namespace WulinTweaks
                     G1 = g1,
                     Pid = pa,
                     BothStory = s0 && s1,
+                    FirstIsG0 = (a == g0),
                 });
             }
 
@@ -426,6 +428,7 @@ namespace WulinTweaks
                     if (_logPair++ < 300)
                         Plugin.L.LogInfo("[flat]   pid=" + p.Pid + (p.BothStory ? " (B 类)" : " (A 类)")
                                          + " 在队门=" + Hex(p.G0) + " 不在队门=" + Hex(p.G1)
+                                         + " 先问=" + (p.FirstIsG0 ? "在队" : "不在队")
                                          + " 内容 " + p.Region.Count + " 节点，改线 " + p.Exits.Count);
                 }
             }

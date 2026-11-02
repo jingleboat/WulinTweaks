@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.47";  // 1.11.47 配对白名单(仅HavePartnerCondition) + X类按region含剧情 + 门轨迹日志 + 不再放宽IsJoinedTeamCondition
+        public const string Version = "1.11.48";  // 1.11.48 展开日志补「先问=在队/不在队」+ 补 PC 门轨迹日志
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
