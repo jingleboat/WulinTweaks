@@ -59,8 +59,16 @@ namespace WulinTweaks
 
                 try
                 {
-                    inst.m_surName = "";
+                    // v1.11.38（用户指定）：只清空 '@' 及其后面的内容。
+                    //   m_givenName → ""；m_surName 只有当它本身也以 '@' 开头时才清
+                    //   （正常情况 m_surName 是空串，不要动它）。
                     inst.m_givenName = "";
+                    try
+                    {
+                        var cur = inst.m_surName;
+                        if (!string.IsNullOrEmpty(cur) && cur[0] == '@') inst.m_surName = "";
+                    }
+                    catch { }
                 }
                 catch (Exception e)
                 {
@@ -71,7 +79,7 @@ namespace WulinTweaks
                 _done[uid] = p;
                 if (_logs++ < 60)
                     Plugin.L.LogInfo("[unstranger] 放宽在队条件 uid=" + uid
-                                     + " 原陌生名=\"" + g + "\" → 已清空（显示回落模板真名）");
+                                     + " 原陌生名=\"" + g + "\" → 已清空");
             }
             catch (Exception e)
             {

@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.37";  // 1.11.37 读档完成重置放宽一次性状态与姓名缓存；播放时强制重判
+        public const string Version = "1.11.38";  // 1.11.38 放宽触发时只清空 '@' 及其后面的内容（不再写模板真名）
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
