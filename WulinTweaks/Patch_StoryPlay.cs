@@ -113,7 +113,8 @@ namespace WulinTweaks
                 bool inTeam;
                 int pid = BranchFlatten.GatePid(p, out inTeam);
                 Plugin.L.LogInfo("[gate] 图=" + (gn ?? "?") + " 门=" + p.ToString("X")
-                                 + " pid=" + pid + " 侧=" + (pid <= 0 ? "?" : (inTeam ? "在队" : "不在队"))
+                                 + " pid=" + pid + " 类=" + BranchFlatten.GateCls(p)
+                                 + " 侧=" + (pid <= 0 ? "?" : (inTeam ? "在队" : "不在队"))
                                  + " forced=" + (BranchFlatten.IsGateForced(p) ? "Y" : "N")
                                  + " → " + (result ? "通过" : "不通过"));
             }

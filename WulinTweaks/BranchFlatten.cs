@@ -242,6 +242,10 @@ namespace WulinTweaks
                 // 门才有 conditionPort
                 IntPtr cp = NodePort(nd, "conditionPort");
                 condOf[nd] = cp == IntPtr.Zero ? IntPtr.Zero : ConditionOf(cp);
+                if (condOf[nd] != IntPtr.Zero)
+                {
+                    try { _gateCls[nd] = Il2CppNative.ClassNameOf(condOf[nd]) ?? ""; } catch { }
+                }
             }
 
             // ---------- ② 找互补门对 ----------
@@ -475,6 +479,12 @@ namespace WulinTweaks
         /// <summary>v1.11.49：门 → (pid, 是否在队侧)，供 [gate] 轨迹日志打印。</summary>
         private static readonly Dictionary<IntPtr, KeyValuePair<int, bool>> _gateInfo =
             new Dictionary<IntPtr, KeyValuePair<int, bool>>();
+        private static readonly Dictionary<IntPtr, string> _gateCls = new Dictionary<IntPtr, string>();
+
+        internal static string GateCls(IntPtr gate)
+        {
+            string v; return _gateCls.TryGetValue(gate, out v) ? v : "";
+        }
 
         internal static int GatePid(IntPtr gate, out bool inTeam)
         {

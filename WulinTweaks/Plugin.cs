@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.50";  // 1.11.50 展平对称化(按连接顺序) + 只对需要伙伴生效
+        public const string Version = "1.11.51";  // 1.11.51 放宽改为每(图,pid)一次；门轨迹登记所有带条件的门 + 类名
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

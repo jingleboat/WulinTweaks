@@ -56,12 +56,18 @@ namespace WulinTweaks
         /// 这就是「times 压制」真正该管的东西 —— 压制放宽本身，而不是压制 Hold 的通过。</summary>
         private static readonly HashSet<string> _relaxedOnce = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        private static bool RelaxOnce(string gn)
+        /// <summary>
+        /// v1.11.51：粒度从「每图一次」改为「每 (图, partnerID) 一次」。
+        /// R10049-2 里有 12 对「需要伙伴」，旧的每图一次让第一个角色吃掉额度、其余 11 个全走原版。
+        /// 防循环能力不变：同一角色在同一张图里仍然只放宽一次。
+        /// </summary>
+        private static bool RelaxOnce(string gn, int pid)
         {
             if (string.IsNullOrEmpty(gn)) return true;
-            if (_relaxedOnce.Add(gn)) return true;          // 第一次：放宽
-            if (_logRelaxOnce++ < 12)
-                Plugin.L.LogInfo("[relax] 图 " + gn + " 已放宽过一次 → 本次走原版");
+            string key = pid > 0 ? (gn + "|" + pid) : gn;
+            if (_relaxedOnce.Add(key)) return true;
+            if (_logRelaxOnce++ < 20)
+                Plugin.L.LogInfo("[relax] 图 " + gn + " pid=" + pid + " 已放宽过一次 → 本次走原版");
             return false;
         }
 
@@ -132,13 +138,13 @@ namespace WulinTweaks
                 // 同样按原版判定（不放宽）。粒度可以只压某一个场景，而不是整张图。
                 if (Plugin.IsSceneBlacklisted(StoryScene.LastOf(gn))) return false;
 
-                if (pid <= 0) return RelaxOnce(gn);
+                if (pid <= 0) return RelaxOnce(gn, pid);
 
                 var m = _rId.Match(gn);
-                if (!m.Success) { Unstranger.Apply(pid); return RelaxOnce(gn); }   // 非角色剧情图
+                if (!m.Success) { Unstranger.Apply(pid); return RelaxOnce(gn, pid); }   // 非角色剧情图
 
                 int selfId = int.Parse(m.Groups[1].Value);
-                if (pid != selfId) { Unstranger.Apply(pid); return RelaxOnce(gn); } // 别的角色（彩蛋）
+                if (pid != selfId) { Unstranger.Apply(pid); return RelaxOnce(gn, pid); } // 别的角色（彩蛋）
 
                 // ★ v1.11.40：清陌生名放在「故意不放宽」的守卫之后、RelaxOnce 之前。
                 //   RelaxOnce 是「每图只放宽一次」的计数器 —— 它只该限制"放宽"，
@@ -161,7 +167,7 @@ namespace WulinTweaks
                 if (IsNeverJoined(pid)) return false;                // 本命 + 未入队 -> 不放宽
 
                 Unstranger.Apply(pid);                               // ★ 只在"本来会放宽"时才清
-                return RelaxOnce(gn);                                // 本命 + 入过队 -> 放宽（每图一次）
+                return RelaxOnce(gn, pid);                                // 本命 + 入过队 -> 放宽（每图一次）
             }
             catch (Exception e) { ModKit.Err("team rule", e); return true; }
         }
