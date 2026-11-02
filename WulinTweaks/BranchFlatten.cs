@@ -349,8 +349,9 @@ namespace WulinTweaks
             //   ① 无新增环 —— 新环必然经过某条被改的边 (src→g1)，所以只需判断 g1 能否回到 src；
             //   ② 可达性守恒 —— 改线后 Reach(g1) 必须仍包含改线前的 Reach(g1)（汇合点不能丢）。
             // 任一不过 → 逆序还原所有边 + 撤销门登记。
-            var beforeReach = new HashSet<IntPtr>();
-            foreach (var p in expand) beforeReach.UnionWith(Reach(p.G1, outs));
+            // v1.11.46：可达性守恒**按对**比较（并集比较是 v1.11.45 的错误做法）
+            var beforeByPair = new Dictionary<Pair, HashSet<IntPtr>>();
+            foreach (var p in expand) beforeByPair[p] = Reach(p.G1, outs);
 
             var undo = new List<(IntPtr Port, IntPtr OldT, IntPtr Src, IntPtr G1)>();
             bool commitFail = false;
@@ -385,9 +386,10 @@ namespace WulinTweaks
             }
             if (!rolled)
             {
-                var afterReach = new HashSet<IntPtr>();
-                foreach (var p in expand) afterReach.UnionWith(Reach(p.G1, outs));
-                if (!beforeReach.IsSubsetOf(afterReach)) rolled = true;               // 汇合点丢失
+                foreach (var p in expand)
+                {
+                    if (!beforeByPair[p].IsSubsetOf(Reach(p.G1, outs))) { rolled = true; break; }
+                }
             }
 
             if (rolled)

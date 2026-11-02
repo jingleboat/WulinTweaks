@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.45";  // 1.11.45 展平事务化：改线→环检测/可达性校验→失败整体回滚；去重表不可淘汰；重入保护
+        public const string Version = "1.11.46";  // 1.11.46 可达性守恒改为按对比较（并集比较会误回滚）
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
