@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.49";  // 1.11.49 [gate] 补 pid/侧别 + 白名单扩容（判断地图存在NPC / 需要NPC处于家园中）
+        public const string Version = "1.11.50";  // 1.11.50 展平对称化(按连接顺序) + 只对需要伙伴生效
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

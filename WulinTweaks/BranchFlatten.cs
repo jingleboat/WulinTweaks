@@ -197,6 +197,8 @@ namespace WulinTweaks
             public int Pid;
             public bool BothStory; // 两侧都是单节点剧情 = B 类
             public bool FirstIsG0; // v1.11.48：父端口第一条连接是不是「在队」侧
+            public IntPtr First;   // v1.11.50：父端口第一条连接（引擎先问这一道）
+            public IntPtr Second;  // v1.11.50：第二条
             public HashSet<IntPtr> Region;
             public List<KeyValuePair<IntPtr, IntPtr>> Exits;  // (源节点, 旧目标)
         }
@@ -299,6 +301,8 @@ namespace WulinTweaks
                     Pid = pa,
                     BothStory = s0 && s1,
                     FirstIsG0 = (a == g0),
+                    First = a,
+                    Second = b,
                 });
             }
 
@@ -313,16 +317,16 @@ namespace WulinTweaks
             // ---------- ③ 每对算独占内容 region 与对外出口 ----------
             foreach (var p in pairs)
             {
-                var r0 = Reach(p.G0, outs);
-                var r1 = Reach(p.G1, outs);
+                var r0 = Reach(p.First, outs);
+                var r1 = Reach(p.Second, outs);
                 var region = new HashSet<IntPtr>(r0);
                 region.ExceptWith(r1);
-                region.Remove(p.G0);
-                region.Remove(p.G1);
+                region.Remove(p.First);
+                region.Remove(p.Second);
                 p.Region = region;
                 p.Exits = region.Count == 0 || region.Count > MaxRegion
                     ? new List<KeyValuePair<IntPtr, IntPtr>>()
-                    : FindExits(region, outs, p.G1);
+                    : FindExits(region, outs, p.Second);
             }
 
             // ---------- ④ 剔除有问题的对（空 / 过大 / 无出口） ----------
@@ -364,7 +368,7 @@ namespace WulinTweaks
             // 任一不过 → 逆序还原所有边 + 撤销门登记。
             // v1.11.46：可达性守恒**按对**比较（并集比较是 v1.11.45 的错误做法）
             var beforeByPair = new Dictionary<Pair, HashSet<IntPtr>>();
-            foreach (var p in expand) beforeByPair[p] = Reach(p.G1, outs);
+            foreach (var p in expand) beforeByPair[p] = Reach(p.Second, outs);
 
             var undo = new List<(IntPtr Port, IntPtr OldT, IntPtr Src, IntPtr G1)>();
             bool commitFail = false;
@@ -376,14 +380,14 @@ namespace WulinTweaks
                 {
                     IntPtr srcNode = e.Key, oldT = e.Value;
                     if (!outs.TryGetValue(srcNode, out var info) || info.Port == IntPtr.Zero
-                        || !RedirectEdge(info.Port, oldT, p.G1))
+                        || !RedirectEdge(info.Port, oldT, p.Second))
                     {
                         commitFail = true;
                         break;
                     }
                     int idx = info.Targets.IndexOf(oldT);
-                    if (idx >= 0) info.Targets[idx] = p.G1;     // 同步内存模型，供环检测使用
-                    undo.Add((info.Port, oldT, srcNode, p.G1));
+                    if (idx >= 0) info.Targets[idx] = p.Second; // 同步内存模型，供环检测使用
+                    undo.Add((info.Port, oldT, srcNode, p.Second));
                     ok++;
                 }
                 if (commitFail) break;
@@ -401,7 +405,7 @@ namespace WulinTweaks
             {
                 foreach (var p in expand)
                 {
-                    if (!beforeByPair[p].IsSubsetOf(Reach(p.G1, outs))) { rolled = true; break; }
+                    if (!beforeByPair[p].IsSubsetOf(Reach(p.Second, outs))) { rolled = true; break; }
                 }
             }
 
@@ -421,8 +425,8 @@ namespace WulinTweaks
             {
                 foreach (var p in expand)
                 {
-                    _gateForced.Add(p.G0);
-                    _gateForced.Add(p.G1);
+                    _gateForced.Add(p.First);
+                    _gateForced.Add(p.Second);
                     _gateInfo[p.G0] = new KeyValuePair<int, bool>(p.Pid, true);
                     _gateInfo[p.G1] = new KeyValuePair<int, bool>(p.Pid, false);
                     try { RelaxName.MarkRelaxed(p.Pid, graphName); } catch { }
@@ -462,9 +466,8 @@ namespace WulinTweaks
             {
                 string cn = Il2CppNative.ClassNameOf(cond);
                 if (string.IsNullOrEmpty(cn)) return false;
-                return cn == "HavePartnerCondition"        // 需要伙伴
-                    || cn == "NpcAtMapCondition"           // 判断地图存在NPC
-                    || cn == "CheckNpcAtFiefCondition";    // 需要NPC处于家园中
+                // v1.11.50（用户指定）：放宽与展平**都只对「需要伙伴」生效**。
+                return cn == "HavePartnerCondition";
             }
             catch { return false; }
         }
