@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.43";  // 1.11.43 取消 region 相交排除 + 独立剧情节点播放日志
+        public const string Version = "1.11.44";  // 1.11.44 停用动态 Patch（启动闪退）；保留取消 region 相交排除
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -136,7 +136,8 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
 
 
             H = new Harmony(Guid);
-            try { Patch_StoryPlayAlone.Apply(H); } catch (Exception e) { L.LogWarning("[play] 动态挂载失败: " + e.Message); }
+            /* v1.11.44：动态类型扫描 + 动态 Patch 导致启动闪退（日志停在 Loading 之后），已停用 */
+            // try { Patch_StoryPlayAlone.Apply(H); } catch (Exception e) { L.LogWarning("[play] 动态挂载失败: " + e.Message); }
 
             SafePatch(typeof(Hooks.InteractiveOutLine1), "InteractiveObject.SetOutLine(bool)");
             SafePatch(typeof(Hooks.InteractiveOutLine2), "InteractiveObject.SetOutLine(Transform,bool)");
