@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.31";  // 1.11.31 面板地图两行合并为一行「地图解锁」
+        public const string Version = "1.11.35";  // 1.11.35 放宽名单支持「图名:partnerID」门对级
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -37,6 +37,7 @@ namespace WulinTweaks
         internal static ConfigEntry<bool> FlattenBranches;
         internal static ConfigEntry<string> FlattenBlacklist;
         internal static ConfigEntry<string> StoryBlacklist;
+        internal static ConfigEntry<string> SceneBlacklist;
         internal static ConfigEntry<string> FiefReadyList;
 
         // ④ 易物
@@ -101,6 +102,13 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
                 + "留空 = 所有剧情都照常放宽。"
                 + "已知对照：R10005-11=苗彩蝶(uid 10005) 那段循环；"
                 + "R10028-7=一醉方休，R10025-6=杯中明镜，R10112-2=烈酒与故事（需要时自行加上）");
+
+            SceneBlacklist = Config.Bind("3_Story", "SceneBlacklist", "",
+                "「场景级」固定不放宽名单（逗号分隔的 **ScenarioKey**，例如 R10049-10_0_0；"
+                + "末尾带 * 按前缀匹配，例如 R10049-10_*）。"
+                + "判定时用「该剧情图最近播放的那个 ScenarioKey」去比，命中就按原版（不放宽队友条件）。"
+                + "和图名名单（IgnoreTeamConditionBlacklist）是两套：图名名单管整张图，这个可以只压某一个场景。"
+                + "留空 = 不启用场景级名单。");
 
             FiefReadyList = Config.Bind("3_Story", "FiefReadyList", "",
                 "读档/换图后自动给这些人物补「可入家园」（逗号分隔的 uid，例如 10142,10143）。"
@@ -192,6 +200,18 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
         /// （比如 R10005-* 覆盖该角色的所有剧情图）。
         /// </summary>
         internal static bool IsStoryBlacklisted(string graphName)
+            => IsStoryBlacklisted(graphName, 0, false);
+
+        /// <summary>
+        /// v1.11.35：支持「图名:partnerID」门对级条目（与 FlattenBlacklist 对齐）。
+        /// 例：`Fame-10:10049` 只压 Fame-10 图里 partnerID=10049 的那几条在队条件，
+        /// 同图其它角色的在队条件照常放宽（Fame-10 一张图里就有 30 多个 partnerID）。
+        /// 单参版本只认图名级条目，含 ':' 的条目在那边一律不算命中。
+        /// </summary>
+        internal static bool IsStoryBlacklisted(string graphName, int partnerId)
+            => IsStoryBlacklisted(graphName, partnerId, true);
+
+        private static bool IsStoryBlacklisted(string graphName, int partnerId, bool withPair)
         {
             try
             {
@@ -204,6 +224,24 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
                     var p = piece.Trim();
                     if (p.Length == 0) continue;
 
+                    // ── 门对级：图名:partnerID ──────────────────────────────
+                    int colon = p.IndexOf(':');
+                    if (colon > 0)
+                    {
+                        if (!withPair) continue;                 // 图名级调用：忽略门对条目
+                        if (!int.TryParse(p.Substring(colon + 1).Trim(), out var want)) continue;
+                        var gOnly = p.Substring(0, colon).Trim();
+                        if (gOnly.Length == 0) continue;
+                        if (want == partnerId &&
+                            string.Equals(graphName, gOnly, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                        continue;
+                    }
+
+                    // v1.11.32：名单项允许写成 ScenarioKey（如 R10049-10_0_0）——
+                    // 先归一到宿主图名再比，这样把场景键填进「图名名单」也不会变成死项。
+                    var asGraph = GraphNameOfScene(p);
+
                     if (p.EndsWith("*"))
                     {
                         var prefix = p.Substring(0, p.Length - 1);
@@ -215,10 +253,60 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
                     {
                         return true;
                     }
+                    else if (asGraph != null &&
+                             string.Equals(graphName, asGraph, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
                 }
             }
             catch { }
             return false;
+        }
+
+        /// <summary>
+        /// 「场景级固定名单」：按 **ScenarioKey** 匹配（逗号分隔，支持末尾 * 前缀匹配）。
+        /// 判定时用的是「该图最近播放的场景键」，见 StoryScene.LastOf。
+        /// </summary>
+        internal static bool IsSceneBlacklisted(string scenarioKey)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(scenarioKey)) return false;
+                string raw = SceneBlacklist == null ? null : SceneBlacklist.Value;
+                if (string.IsNullOrEmpty(raw)) return false;
+
+                foreach (var piece in raw.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' },
+                                                StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var p = piece.Trim();
+                    if (p.Length == 0) continue;
+                    if (p.EndsWith("*"))
+                    {
+                        var prefix = p.Substring(0, p.Length - 1);
+                        if (prefix.Length > 0 &&
+                            scenarioKey.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                            return true;
+                    }
+                    else if (string.Equals(scenarioKey, p, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>
+        /// 把 ScenarioKey 归一成宿主图名：`R10049-10_0_0` -> `R10049-10`、`Fame-10_72` -> `Fame-10`。
+        /// 不是场景键（没有 `_数字_数字` 后缀）就返回 null。
+        /// </summary>
+        internal static string GraphNameOfScene(string scenarioKey)
+        {
+            if (string.IsNullOrEmpty(scenarioKey)) return null;
+            var m = System.Text.RegularExpressions.Regex.Match(scenarioKey, @"^(.*)_\d+_\d+$");
+            return m.Success ? m.Groups[1].Value : null;
         }
 
         private void SafePatch(Type patchClass, string label)

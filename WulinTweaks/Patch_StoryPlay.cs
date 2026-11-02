@@ -33,6 +33,19 @@ namespace WulinTweaks
                 string graph = null;
                 try { graph = __instance.graph == null ? null : __instance.graph.name; } catch { }
                 RelaxName.PlayBegin(graph);
+
+                // v1.11.32：记录这张图「正在播的场景键」，供「场景级固定名单」判定。
+                // 用 Il2CppNative 按字段名读（不依赖 interop 是否导出 ScenarioKey 属性）。
+                try
+                {
+                    Il2CppNative.Init();
+                    if (Il2CppNative.Ready)
+                    {
+                        string key = Il2CppNative.Str(__instance.Pointer, "ScenarioKey");
+                        if (!string.IsNullOrEmpty(key)) StoryScene.Record(graph, key);
+                    }
+                }
+                catch { }
             }
             catch (Exception e) { Plugin.L.LogWarning("[name] PlayBegin 异常: " + e.Message); }
         }

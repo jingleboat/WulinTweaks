@@ -176,6 +176,9 @@ namespace WulinTweaks
                 bool neg = *(byte*)(p + OFF_PARTNER_NEGATE_PC) != 0;
                 if (pid <= 0 || neg) return;
                 RelaxName.MarkRelaxed(pid, TeamRule.GraphNameOf(self));
+                // v1.11.34：这条在队判定刚被跳过 → 把它涉及的那个角色从陌生名改回真名。
+                // 范围就是这个 pid，不做全档扫描、不按名单。
+                Unstranger.Apply(pid);
             }
             catch { }
         }

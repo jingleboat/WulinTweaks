@@ -115,11 +115,51 @@ namespace WulinTweaks
             }
         }
 
-        private static bool IsBlacklisted(string gn)
+        /// <summary>
+        /// 门对级跳过名单（v1.11.33）：名单项写成 `图名:partnerID`（如 `Fame-10:10049`），
+        /// 只跳过这张图里 partnerID 命中的那一对「在队 / 不在队」门，其余门对照常展开。
+        /// 不带 `:` 的项由 IsBlacklisted 走整图跳过；带 `*` 的图名部分仍支持前缀匹配。
+        /// </summary>
+        private static bool SkipPair(string gn, int pid)
         {
             try
             {
+                if (string.IsNullOrEmpty(gn) || pid <= 0) return false;
                 var cfg = Plugin.FlattenBlacklist;
+                string raw = cfg == null ? null : cfg.Value;
+                if (string.IsNullOrEmpty(raw)) return false;
+
+                foreach (var piece in raw.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' },
+                                                StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var p = piece.Trim();
+                    int c = p.IndexOf(':');
+                    if (c <= 0 || c >= p.Length - 1) continue;      // 没有 :pid → 整图项，跳过
+
+                    var gpart = p.Substring(0, c).Trim();
+                    var ppart = p.Substring(c + 1).Trim();
+                    if (gpart.Length == 0) continue;
+
+                    bool gok;
+                    if (gpart.EndsWith("*"))
+                        gok = gpart.Length > 1 &&
+                              gn.StartsWith(gpart.Substring(0, gpart.Length - 1), StringComparison.OrdinalIgnoreCase);
+                    else
+                        gok = string.Equals(gn, gpart, StringComparison.OrdinalIgnoreCase);
+                    if (!gok) continue;
+
+                    int want;
+                    if (int.TryParse(ppart, out want) && want > 0 && want == pid) return true;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        private static bool IsBlacklisted(string gn)
+        {
+            try
+            {                var cfg = Plugin.FlattenBlacklist;
                 string raw = cfg == null ? null : cfg.Value;
                 if (string.IsNullOrEmpty(raw)) return false;
                 foreach (var piece in raw.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' },
@@ -201,6 +241,7 @@ namespace WulinTweaks
             var pairs = new List<Pair>();
             var seenPair = new HashSet<long>();
             int xSkipped = 0;
+            int pairSkipped = 0;
             foreach (var kv in outs)
             {
                 var ts = kv.Value.Targets;
@@ -215,6 +256,9 @@ namespace WulinTweaks
                 int pa = Il2CppNative.Int32(ca, "partnerID");
                 int pb = Il2CppNative.Int32(cb, "partnerID");
                 if (pa <= 0 || pa != pb) continue;                 // partnerID<=0 不是「需要伙伴」
+
+                // v1.11.33：门对级跳过 —— 只压 partnerID 命中的那一对
+                if (SkipPair(graphName, pa)) { pairSkipped++; continue; }
 
                 bool na = Il2CppNative.Byte(ca, "Negate") != 0;
                 bool nb = Il2CppNative.Byte(cb, "Negate") != 0;
@@ -241,6 +285,12 @@ namespace WulinTweaks
                 });
             }
 
+            if (pairSkipped > 0 && _logGraph < 40)
+            {
+                _logGraph++;
+                Plugin.L.LogInfo("[flat] 图 " + graphName + " 按门对名单跳过 " + pairSkipped
+                                 + " 对（partnerID 命中，其余照常展开）");
+            }
             if (pairs.Count == 0) { _done.Add(graph); return; }
 
             // ---------- ③ 每对算独占内容 region 与对外出口 ----------

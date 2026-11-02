@@ -108,7 +108,12 @@ namespace WulinTweaks
                 int pid = Hooks.SafeMem.Int32(condNode, OFF_PARTNER_ID);
 
                 if (string.IsNullOrEmpty(gn)) return true;
-                if (Plugin.IsStoryBlacklisted(gn)) return false;
+                // v1.11.35：名单支持「图名:partnerID」门对级（例：Fame-10:10049）
+                if (Plugin.IsStoryBlacklisted(gn, pid)) return false;
+
+                // v1.11.32：场景级固定名单 —— 这张图「最近播的那个 ScenarioKey」命中名单时，
+                // 同样按原版判定（不放宽）。粒度可以只压某一个场景，而不是整张图。
+                if (Plugin.IsSceneBlacklisted(StoryScene.LastOf(gn))) return false;
 
                 if (pid <= 0) return RelaxOnce(gn);
 

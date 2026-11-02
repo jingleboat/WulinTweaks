@@ -187,7 +187,16 @@ python tools/simulate_flatten.py --only R20025-11 --detail   # 门对 3，B 类 
 | 名单 | 位置 | 作用 |
 |---|---|---|
 | 代码内固定名单 | `TeamRule._fixed`（手机 `k_fixed_original[]`） | 这些图**一律按原版判定**，与 cfg 无关 |
-| 手动名单 | cfg `3_Story / IgnoreTeamConditionBlacklist` | 你自己加的排除项（支持 `*` 前缀） |
+| 手动名单 | cfg `3_Story / IgnoreTeamConditionBlacklist` | 你自己加的排除项（支持 `*` 前缀与 `图名:partnerID` 门对级） |
+
+**条目写法（1.11.35 起两种都支持）**：
+
+| 写法 | 作用 |
+|---|---|
+| `R10049-0` | 整张图都不放宽 |
+| `R10060-2-*` | 按前缀压一族图 |
+| `R10049-10_0_0` | 场景键（自动归一到宿主图名 `R10049-10`） |
+| **`Fame-10:10049`** | **门对级**：只压这张图里 `partnerID=10049` 的那几条在队条件，同图其它角色照常放宽 |
 
 代码内固定名单当前内容：`Fame-2`、`Guide10099-1/6/11/13/15/16/18`（师父线）；
 **`R10112-2`（烈酒与故事）已于 2026-10-31 移出**（它的开启条件只有「大地图图标 5064 冰心湖已显示」，
@@ -202,6 +211,26 @@ python tools/simulate_flatten.py --only R20025-11 --detail   # 门对 3，B 类 
 
 要再压某张图：图名就是剧情资产名（`Story/*.asset` 的文件名，例如 `R20004-6`），
 手工名单里加一行重启即可；离线查事件分组用 `事件总表.xlsx`（`StoryConfig` 表，`子事件` 列是逗号分隔的图名）。
+
+---
+
+## 1.11.34 / 1.11.35 备忘
+
+| 版本 | 改动 |
+|---|---|
+| **1.11.34** | 新增 `Unstranger`：**放宽「某角色在队」这条条件时，把条件涉及的那个 `partnerID` 从「陌生名」改回真名**。范围就是这个 pid —— 不全档扫、不按名单；触发点挂在 `NativeTeamHook.MarkRelaxed`（Negate=0 那一侧被跳过时）。只改 `m_surName`/`m_givenName` 两个 string 字段，不动 `relationShip` / `m_additionProps` / 任何字典结构；换图/读档清缓存重判 |
+| **1.11.35** | 放宽名单（`IgnoreTeamConditionBlacklist`）支持 **`图名:partnerID` 门对级**（与 `FlattenBlacklist` 同一套语法），并把「剧情分支展开跳过名单」里的两个场景一并压掉：`R10049-10:10049`、`Fame-10:10049` |
+
+> **为什么要门对级**：`Fame-10`（红颜劫）一张图里有 **30 多个 partnerID**
+> （10005/10008/10009/10021/…/42002），写成图名级会把整张图的放宽全压掉；
+> 而 `R10049-10` 里只有 `10049`，两种写法等价（实测 `partnerID` 集合 = `{10049}`）。
+>
+> **陌生名为什么"清空"就能显示真名**（反汇编 `libil2cpp.so`）：
+> `get_IsUsingStangerName(0x223B8AC)` = `m_givenName` 非空且以 `@` 开头；
+> `get_FullName(0x223B950)` 在"不陌生"分支读实例 `m_surName + m_givenName`，空则回落模板。
+> 所以把 `@…` 清掉、名字留空即可让 PC 回落到模板 `surName+givenName`。
+> ⚠️ **手机端不成立**：手机回落的是 `CharacterPoolData.uName`，清空会退化成内部名，
+> 所以手机端改成"直接写模板真名"并丢弃该 uid 的临时改名槽（v139/v140）。
 
 ---
 
