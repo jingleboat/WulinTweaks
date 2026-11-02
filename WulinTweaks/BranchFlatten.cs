@@ -308,7 +308,12 @@ namespace WulinTweaks
                     : FindExits(region, outs, p.G1);
             }
 
-            // ---------- ④ 剔除有问题的对（重叠 / 无出口 / 过大） ----------
+            // ---------- ④ 剔除有问题的对（空 / 过大 / 无出口） ----------
+            // v1.11.43（用户指定）：**删掉“与另一对 region 相交就跳过”这一条**。
+            // 实测 R10049-2：10054 的 region 只有 1 个节点（R10049-2_3_2_2），却被 10063（8 节点）
+            // 完整包住 → 老规则两对都放弃 → 10054 的剧情永远不播。
+            // 而“让重叠部分只播一次”需要在重叠节点上做执行期标记，代价与风险都大于收益；
+            // 两对都展开后执行期天然只走一条路径，不会重复播放。
             var expand = new List<Pair>();
             int skippedOverlap = 0, skippedExits = 0, skippedEmpty = 0;
             foreach (var p in pairs)
@@ -317,13 +322,11 @@ namespace WulinTweaks
                 if (p.Region.Count > MaxRegion) { skippedEmpty++; continue; }
                 if (p.Exits.Count == 0) { skippedExits++; continue; }
 
-                bool clash = false;
                 foreach (var q in pairs)
                 {
                     if (q == p || q.Region.Count == 0) continue;
-                    if (p.Region.Overlaps(q.Region)) { clash = true; break; }
+                    if (p.Region.Overlaps(q.Region)) { skippedOverlap++; break; }   // 只计数
                 }
-                if (clash) { skippedOverlap++; continue; }
 
                 expand.Add(p);
             }

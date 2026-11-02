@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.39";  // 1.11.39 删除显示层回落（三层 getter 补丁）与 RealFullName 拆分；只清 givenName 的 @
+        public const string Version = "1.11.43";  // 1.11.43 取消 region 相交排除 + 独立剧情节点播放日志
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -136,6 +136,7 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
 
 
             H = new Harmony(Guid);
+            try { Patch_StoryPlayAlone.Apply(H); } catch (Exception e) { L.LogWarning("[play] 动态挂载失败: " + e.Message); }
 
             SafePatch(typeof(Hooks.InteractiveOutLine1), "InteractiveObject.SetOutLine(bool)");
             SafePatch(typeof(Hooks.InteractiveOutLine2), "InteractiveObject.SetOutLine(Transform,bool)");
