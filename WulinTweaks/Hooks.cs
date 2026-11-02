@@ -454,7 +454,9 @@ namespace WulinTweaks
                             + " times=" + __instance.checkSucessTimes
                             + " hits=" + __state + "→" + NativeTeamHook.TeamCondHits
                             + " flatGate=" + (BranchFlatten.IsGateForced(__instance.Pointer) ? "Y" : "N")
-                            + " → 压制");
+                            + " → " + (BranchFlatten.IsGateForced(__instance.Pointer)
+                                ? "压制，但随后被展平强制放行救回（times 仍被真实 +1）"
+                                : "压制（本次真的判假）"));
                     }
                 }
                 catch (Exception e) { ModKit.Err("guard hold once", e); }

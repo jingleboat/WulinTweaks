@@ -112,9 +112,12 @@ namespace WulinTweaks
                 try { gn = node.graph == null ? null : node.graph.name; } catch { }
                 bool inTeam;
                 int pid = BranchFlatten.GatePid(p, out inTeam);
+                int times = 0;
+                try { times = node.checkSucessTimes; } catch { }
                 Plugin.L.LogInfo("[gate] 图=" + (gn ?? "?") + " 门=" + p.ToString("X")
                                  + " pid=" + pid + " 类=" + BranchFlatten.GateCls(p)
                                  + " 侧=" + (pid <= 0 ? "?" : (inTeam ? "在队" : "不在队"))
+                                 + " times=" + times
                                  + " forced=" + (BranchFlatten.IsGateForced(p) ? "Y" : "N")
                                  + " → " + (result ? "通过" : "不通过"));
             }
