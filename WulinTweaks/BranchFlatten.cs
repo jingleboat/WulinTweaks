@@ -431,8 +431,9 @@ namespace WulinTweaks
                 {
                     _gateForced.Add(p.First);
                     _gateForced.Add(p.Second);
-                    _gateInfo[p.G0] = new KeyValuePair<int, bool>(p.Pid, true);
-                    _gateInfo[p.G1] = new KeyValuePair<int, bool>(p.Pid, false);
+                    // v1.11.52：强制表登记的是 First/Second，日志查询的也是它们
+                    _gateInfo[p.First] = new KeyValuePair<int, bool>(p.Pid, p.First == p.G0);
+                    _gateInfo[p.Second] = new KeyValuePair<int, bool>(p.Pid, p.Second == p.G0);
                     try { RelaxName.MarkRelaxed(p.Pid, graphName); } catch { }
 
                     if (_logPair++ < 300)
