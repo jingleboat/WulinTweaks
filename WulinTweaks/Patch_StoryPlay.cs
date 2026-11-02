@@ -32,6 +32,11 @@ namespace WulinTweaks
                 if (__instance == null) return;
                 string graph = null;
                 try { graph = __instance.graph == null ? null : __instance.graph.name; } catch { }
+
+                // v1.11.36：先按本图名单补一次「陌生名 → 真名」，再开播放窗口。
+                // 顺序不能反：PlayBegin 里 Sync 会拍下实例"原值"，先清掉 @ 才不会在收尾时被还原回去。
+                try { Unstranger.OnPlay(graph); } catch { }
+
                 RelaxName.PlayBegin(graph);
 
                 // v1.11.32：记录这张图「正在播的场景键」，供「场景级固定名单」判定。

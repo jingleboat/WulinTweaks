@@ -220,6 +220,7 @@ python tools/simulate_flatten.py --only R20025-11 --detail   # 门对 3，B 类 
 |---|---|
 | **1.11.34** | 新增 `Unstranger`：**放宽「某角色在队」这条条件时，把条件涉及的那个 `partnerID` 从「陌生名」改回真名**。范围就是这个 pid —— 不全档扫、不按名单；触发点挂在 `NativeTeamHook.MarkRelaxed`（Negate=0 那一侧被跳过时）。只改 `m_surName`/`m_givenName` 两个 string 字段，不动 `relationShip` / `m_additionProps` / 任何字典结构；换图/读档清缓存重判 |
 | **1.11.35** | 放宽名单（`IgnoreTeamConditionBlacklist`）支持 **`图名:partnerID` 门对级**（与 `FlattenBlacklist` 同一套语法），并把「剧情分支展开跳过名单」里的两个场景一并压掉：`R10049-10:10049`、`Fame-10:10049` |
+| **1.11.36** | 修「陌生名偶尔不生效」：① 不再把「此刻不是 `@` 名」缓存成「以后也不会陌生」（`@` 是在角色初始化时才写进实例的，放宽判定常早于那一刻）；② `StoryScenarioNode.OnActive` 里 `Unstranger.OnPlay(graph)` 按「本图被放宽过的 uid」补一次，排在 `RelaxName.PlayBegin` **之前**（先清 `@`，`RelaxName` 拍到的原值才是空串，收尾还原后仍回落到模板真名） |
 
 > **为什么要门对级**：`Fame-10`（红颜劫）一张图里有 **30 多个 partnerID**
 > （10005/10008/10009/10021/…/42002），写成图名级会把整张图的放宽全压掉；

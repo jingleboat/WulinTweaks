@@ -138,6 +138,25 @@ namespace WulinTweaks
         internal static string PlayingGraph => _playingGraph;
 
         /// <summary>
+        /// v1.11.36：某张图里「被放宽过」的 uid 列表。
+        /// 用途：放宽判定往往远早于剧情真正播放（Hold 条件被反复预判），那一刻角色可能还没实例化、
+        /// 名字也还没带上 '@'；而「每图只放宽一次」让我们没有第二次机会。所以播放剧情时按这份名单补一次。
+        /// </summary>
+        internal static int[] UidsOfGraph(string graph)
+        {
+            if (string.IsNullOrEmpty(graph)) return Array.Empty<int>();
+            var list = new System.Collections.Generic.List<int>(8);
+            for (int i = 0; i < SlotCount; i++)
+            {
+                var s = Slots[i];
+                if (s == null || s.Uid <= 0) continue;
+                if (s.Graph == null || !string.Equals(s.Graph, graph, StringComparison.Ordinal)) continue;
+                if (!list.Contains(s.Uid)) list.Add(s.Uid);
+            }
+            return list.ToArray();
+        }
+
+        /// <summary>
         /// 挂在热路径上探测「播放中」状态（250ms 节流）。
         ///
         /// 2026-10-23 踩的坑：原来只在状态翻转时才 Sync，结果段与段之间只要空档超过宽限，

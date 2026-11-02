@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.35";  // 1.11.35 放宽名单支持「图名:partnerID」门对级
+        public const string Version = "1.11.36";  // 1.11.36 陌生名：取消"非@缓存"，并在播放剧情时按本图名单补一次
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

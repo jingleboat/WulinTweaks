@@ -47,17 +47,15 @@ namespace WulinTweaks
                 if (inst == null) return;                  // 实例还没建出来：下次放宽再来
 
                 IntPtr p = inst.Pointer;
-                if (_done.TryGetValue(uid, out var old) && old == p) return;   // 这个实例处理过了
+                if (_done.TryGetValue(uid, out var old) && old == p) return;   // 这个实例已经写过真名了
 
                 string g = null;
                 try { g = inst.m_givenName; } catch { return; }
 
-                // 不是 '@' 开头 → 本来就不是陌生名（或已经被清过）：记下指针，以后不再看
-                if (string.IsNullOrEmpty(g) || g[0] != '@')
-                {
-                    _done[uid] = p;
-                    return;
-                }
+                // v1.11.36：**不在"不是陌生名"时缓存**。
+                // 老版本把"此刻不带 @"记成"以后也不会陌生"，而 @ 是角色初始化时才写进实例的——
+                // 放宽判定若早于初始化，就会永久漏掉这个角色（正是"有时正常有时失效"的成因之一）。
+                if (string.IsNullOrEmpty(g) || g[0] != '@') return;
 
                 try
                 {
@@ -78,6 +76,23 @@ namespace WulinTweaks
             catch (Exception e)
             {
                 if (_warns++ < 5) Plugin.L.LogWarning("[unstranger] 异常: " + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// v1.11.36：剧情开始播放时，按「本图被放宽过的 uid」补一次。
+        /// 为什么需要：放宽判定常远早于真正播放（Hold 条件被反复预判），那一刻角色可能还没实例化、
+        /// 或者名字还没带上 '@'；而「每图只放宽一次」不给我们第二次机会。播放剧情是必然发生的时机。
+        /// ⚠️ 必须排在 RelaxName.PlayBegin 之前：先清掉 '@'，RelaxName 拍到的"原值"才是空串，
+        /// 收尾还原后仍回落到模板真名，而不是把 '@' 还回去。
+        /// </summary>
+        internal static void OnPlay(string graph)
+        {
+            if (string.IsNullOrEmpty(graph)) return;
+            var uids = RelaxName.UidsOfGraph(graph);
+            for (int i = 0; i < uids.Length; i++)
+            {
+                try { Apply(uids[i]); } catch { }
             }
         }
 
