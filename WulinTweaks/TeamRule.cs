@@ -135,9 +135,16 @@ namespace WulinTweaks
                 if (pid <= 0) return RelaxOnce(gn);
 
                 var m = _rId.Match(gn);
-                if (!m.Success) return RelaxOnce(gn);                // 非角色剧情图：放宽（每图一次）
+                if (!m.Success) { Unstranger.Apply(pid); return RelaxOnce(gn); }   // 非角色剧情图
+
                 int selfId = int.Parse(m.Groups[1].Value);
-                if (pid != selfId) return RelaxOnce(gn);             // 别的角色（彩蛋）：放宽（每图一次）
+                if (pid != selfId) { Unstranger.Apply(pid); return RelaxOnce(gn); } // 别的角色（彩蛋）
+
+                // ★ v1.11.40：清陌生名放在「故意不放宽」的守卫之后、RelaxOnce 之前。
+                //   RelaxOnce 是「每图只放宽一次」的计数器 —— 它只该限制"放宽"，
+                //   不该限制"清名字"；否则同一张图里第二个及以后的角色永远清不到
+                //   （R10049-2 有 19 个 partnerID，第一张图用掉一次后其余全落空）。
+                //   IsBondGraph / IsNeverJoined 是刻意不放宽的，清名字等于剧透，所以放它们之后。
 
                 // ★ 结缘图（图里有「结缘界面」节点）**不放宽**。
                 //   这类图的收尾会写人物数据：`激活NPC情缘`（SetBond 双向写）、`获得武功或绝学`（武功）、
@@ -152,6 +159,8 @@ namespace WulinTweaks
                 }
 
                 if (IsNeverJoined(pid)) return false;                // 本命 + 未入队 -> 不放宽
+
+                Unstranger.Apply(pid);                               // ★ 只在"本来会放宽"时才清
                 return RelaxOnce(gn);                                // 本命 + 入过队 -> 放宽（每图一次）
             }
             catch (Exception e) { ModKit.Err("team rule", e); return true; }

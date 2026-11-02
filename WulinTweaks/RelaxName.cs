@@ -183,6 +183,13 @@ namespace WulinTweaks
 
         private static void Sync()
         {
+            // v1.11.40（用户指定）：**停用临时改名**。
+            // 现在只做一件事 —— 放宽命中时把实例 m_givenName 的 '@' 清掉（Unstranger），
+            // 显示完全交回游戏（游戏自己会从实例 → 模板取值）。
+            // 这套「剧情期间写模板真名 + 收尾还原」既没必要，又是"只显示姓""称号·姓名拼重复"
+            // 一类脏数据的来源，故整体停用（保留代码便于回溯）。
+            return;
+#pragma warning disable CS0162
             for (int i = 0; i < SlotCount; i++)
             {
                 var s = Slots[i];
@@ -199,6 +206,7 @@ namespace WulinTweaks
                 }
                 else if (s.InstPatched) Restore(s);
             }
+#pragma warning restore CS0162
         }
 
         /// <summary>
