@@ -33,7 +33,7 @@ namespace WulinTweaks
 
         private static int _logs, _warns;
 
-        internal static void Apply(int uid)
+        internal static void Apply(int uid, bool force = false)
         {
             try
             {
@@ -47,7 +47,7 @@ namespace WulinTweaks
                 if (inst == null) return;                  // 实例还没建出来：下次放宽再来
 
                 IntPtr p = inst.Pointer;
-                if (_done.TryGetValue(uid, out var old) && old == p) return;   // 这个实例已经写过真名了
+                if (!force && _done.TryGetValue(uid, out var old) && old == p) return;   // 已写过真名（force=false 时才信任缓存）
 
                 string g = null;
                 try { g = inst.m_givenName; } catch { return; }
@@ -92,7 +92,7 @@ namespace WulinTweaks
             var uids = RelaxName.UidsOfGraph(graph);
             for (int i = 0; i < uids.Length; i++)
             {
-                try { Apply(uids[i]); } catch { }
+                try { Apply(uids[i], true); } catch { }
             }
         }
 

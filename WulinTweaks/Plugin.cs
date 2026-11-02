@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.36";  // 1.11.36 陌生名：取消"非@缓存"，并在播放剧情时按本图名单补一次
+        public const string Version = "1.11.37";  // 1.11.37 读档完成重置放宽一次性状态与姓名缓存；播放时强制重判
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -186,6 +186,8 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
 
             // ⑪ 剧情收尾：StoryCloseNode 执行结果时还原姓名（v1.10.4 的事件驱动窗口终点）
             SafePatch(typeof(Patch_StoryClose), "StoryCloseNode.OnResult(剧情收尾)");
+            // v1.11.37：读档完成 → 重置「每图只放宽一次」与姓名缓存
+            SafePatch(typeof(Patch_LoadFinished), "GameCharacterManager.OnLoadFinished(读档完成)");
 
             // ⑫ 控制台指令 `join <人物ID|人物名> [1]`（静默：不写任何界面文字）
             SafePatch(typeof(Patch_ConsoleJoinInternal), "ConsoleUI.InvokeCommandInternal(join)");

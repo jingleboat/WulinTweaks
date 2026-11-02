@@ -75,6 +75,23 @@ namespace WulinTweaks
         internal static bool IsFixedName(string gn)
             => !string.IsNullOrEmpty(gn) && _fixedRe.IsMatch(gn);
 
+        /// <summary>
+        /// v1.11.37：读档完成 —— 上一局的判定结果、「只放宽一次」记录、结缘图扫描缓存全部作废。
+        /// 不清的话，读手动存档后同一张图会被判成「已放宽过一次 → 走原版」，
+        /// 于是 MarkRelaxed / Unstranger 一次都不被调用（手机 v143 同一条）。
+        /// </summary>
+        internal static void Reset()
+        {
+            try
+            {
+                _relaxedOnce.Clear();
+                _cache.Clear();
+                _nj.Clear();
+                _bondGraphCache.Clear();
+            }
+            catch { }
+        }
+
         internal static string GraphNameOf(IntPtr condNode)
         {
             try

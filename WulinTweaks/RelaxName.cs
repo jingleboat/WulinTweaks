@@ -345,5 +345,17 @@ namespace WulinTweaks
             _playUntil = 0;
             _playState = 0;
         }
+
+        /// <summary>
+        /// v1.11.37：读档完成 —— 只丢弃槽位，**不回写**。
+        /// 旧实例在读档时已经作废，回写就是往野指针/被复用的地址上写（v90/v91 那类事故）。
+        /// </summary>
+        internal static void DropAll()
+        {
+            for (int i = 0; i < SlotCount; i++) Slots[i] = null;
+            _playingGraph = null;
+            _playUntil = 0;
+            _playState = 0;
+        }
     }
 }

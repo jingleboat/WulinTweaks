@@ -106,6 +106,32 @@ namespace WulinTweaks
     }
 
     /// <summary>
+    /// v1.11.37：读档完成 —— 清掉「每图只放宽一次」和所有姓名缓存。
+    ///
+    /// 为什么必须清：读手动存档后 `TeamRule._relaxedOnce` 还留着上一局的图名，
+    /// 于是第二次触发同一段剧情时只有「已放宽过一次 → 本次走原版」，
+    /// MarkRelaxed / Unstranger 一次都不被调用 → 陌生名没机会被改写。
+    /// 手机端 v143 用同一处（GameCharacterManager.OnLoadFinished）修的同一条。
+    /// </summary>
+    [HarmonyPatch(typeof(GameCharacterManager), "OnLoadFinished")]
+    internal static class Patch_LoadFinished
+    {
+        private static int _logs;
+
+        private static void Postfix()
+        {
+            try
+            {
+                TeamRule.Reset();
+                Unstranger.Reset();
+                RelaxName.DropAll();     // 只丢槽位，不回写（旧实例已经作废，写它就是写野指针）
+                if (_logs++ < 10) Plugin.L.LogInfo("[name] 读档完成 → 重置放宽一次性状态与姓名缓存");
+            }
+            catch (Exception e) { ModKit.Err("patch load finished", e); }
+        }
+    }
+
+    /// <summary>
     /// 剧情事件真正结束的信号 —— 剧情图里那个「结束剧情」节点（StoryCloseNode）执行结果时。
     ///
     /// 为什么需要它：`StoryScenarioNode.Continue` 是**每个节点**都会调一次，
