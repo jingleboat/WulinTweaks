@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.38";  // 1.11.38 放宽触发时只清空 '@' 及其后面的内容（不再写模板真名）
+        public const string Version = "1.11.39";  // 1.11.39 删除显示层回落（三层 getter 补丁）与 RealFullName 拆分；只清 givenName 的 @
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -172,10 +172,13 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
             // ⑦ 剧情：伙伴离队容错（这个类 v1.9.5 就写好了，但**从来没被注册进补丁列表** —— v1.9.8 补上）
             SafePatch(typeof(Patch_ChangePartner), "ChangePartnerNode.OnResult(离队容错)");
 
-            // ⑧ 剧情：显示「熟悉后姓名」三层（v1.9.8；1.9.6 的 Patch_RealName 同样从未注册过）
-            SafePatch(typeof(Patch_RealNameStrangerFlag), "GameCharacterInstance.IsUsingStangerName(状态层)");
-            SafePatch(typeof(Patch_RealNameFull), "GameCharacterInstance.FullName(兜底)");
-            SafePatch(typeof(Patch_RealNameTitle), "GameCharacterInstance.FullNameWithTitle(兜底)");
+            // ⑧ 剧情：显示「熟悉后姓名」
+            // v1.11.39（用户指定）：**删除显示层的回落机制** —— 原来三层 getter 兜底
+            // （get_FullName / get_FullNameWithTitle / get_IsUsingStangerName）不再注册。
+            // 理由：游戏自己的取名已经是「实例 → 模板」的正确实现，我们额外接管只会引入
+            // 「只显示姓」「称号·姓名 拼重复」这类错误。现在只在数据层动手（Unstranger 清 @，
+            // RelaxName 临时写模板真名），显示完全交回游戏。
+            // 三个补丁类仍保留在 Patch_RealName.cs 里（未注册 = 不生效），需要时可一键恢复。
 
             // ⑨ 剧情播放起止（v1.9.9：名字切换只在播放期间、且只作用于当前图）
             SafePatch(typeof(Patch_StoryPlayBegin), "StoryScenarioNode.OnActive(播放开始)");

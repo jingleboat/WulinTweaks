@@ -267,7 +267,15 @@ namespace WulinTweaks
             }
         }
 
-        /// <summary>把实例的「真姓 / 真名」算出来。模板优先，模板缺就用 RealFullName 拆。</summary>
+        /// <summary>
+        /// 把实例的「真姓 / 真名」算出来。
+        /// v1.11.39（用户指定）：**删除回落机制** —— 只取模板的 `SurName` / `GivenName`
+        /// （去掉前导 '@'），不再回落到 `inst.RealFullName`。
+        /// 原因：对本作里「只有姓、没有名」的角色（如 20204 大梁城知府），
+        /// `RealFullName` 返回的是「称号·姓名」（`大梁城·知府`），被当成 given 写进实例后
+        /// 会拼成「知府大梁城·知府」这种脏数据（PC Save2/Save4 已实证）。
+        /// 模板两侧都为空 → 返回 false，调用方就不要改这个角色。
+        /// </summary>
         private static bool RealNamesOf(GameCharacterInstance inst, out string sur, out string given)
         {
             sur = null;
@@ -275,26 +283,12 @@ namespace WulinTweaks
 
             CharacterPoolData tpl = null;
             try { tpl = inst.Templete; } catch { }
-            if (tpl != null)
-            {
-                try { sur = Trim(tpl.SurName); } catch { }
-                try { given = Trim(tpl.GivenName); } catch { }
-            }
+            if (tpl == null) return false;
 
-            if (string.IsNullOrEmpty(given))
-            {
-                string real = null;
-                try { real = Trim(inst.RealFullName); } catch { }
-                if (!string.IsNullOrEmpty(real))
-                {
-                    if (!string.IsNullOrEmpty(sur) && real.StartsWith(sur, StringComparison.Ordinal))
-                        given = real.Substring(sur.Length);
-                    else
-                        given = real;
-                }
-            }
+            try { sur = Trim(tpl.SurName); } catch { }
+            try { given = Trim(tpl.GivenName); } catch { }
 
-            if (string.IsNullOrEmpty(given) && string.IsNullOrEmpty(sur)) return false;
+            if (string.IsNullOrEmpty(sur) && string.IsNullOrEmpty(given)) return false;
             if (sur == null) sur = "";
             if (given == null) given = "";
             return true;

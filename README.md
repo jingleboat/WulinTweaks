@@ -217,6 +217,7 @@ python tools/simulate_flatten.py --only R20025-11 --detail   # 门对 3，B 类 
 ## 1.11.34 / 1.11.35 备忘
 
 | 版本 | 改动 |
+| **1.11.39** | **删除回落机制**：① 不再注册 `Patch_RealName` 三层 getter 补丁（`get_FullName` / `get_FullNameWithTitle` / `get_IsUsingStangerName`），显示交回游戏；② `RealNamesOf` 去掉 `inst.RealFullName` 拆分回落，只取模板 `SurName`/`GivenName`；③ `Unstranger` 只清 `m_givenName` 的 `@` |
 |---|---|
 | **1.11.34** | 新增 `Unstranger`：**放宽「某角色在队」这条条件时，把条件涉及的那个 `partnerID` 从「陌生名」改回真名**。范围就是这个 pid —— 不全档扫、不按名单；触发点挂在 `NativeTeamHook.MarkRelaxed`（Negate=0 那一侧被跳过时）。只改 `m_surName`/`m_givenName` 两个 string 字段，不动 `relationShip` / `m_additionProps` / 任何字典结构；换图/读档清缓存重判 |
 | **1.11.35** | 放宽名单（`IgnoreTeamConditionBlacklist`）支持 **`图名:partnerID` 门对级**（与 `FlattenBlacklist` 同一套语法），并把「剧情分支展开跳过名单」里的两个场景一并压掉：`R10049-10:10049`、`Fame-10:10049` |

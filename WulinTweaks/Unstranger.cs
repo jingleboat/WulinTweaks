@@ -59,16 +59,10 @@ namespace WulinTweaks
 
                 try
                 {
-                    // v1.11.38（用户指定）：只清空 '@' 及其后面的内容。
-                    //   m_givenName → ""；m_surName 只有当它本身也以 '@' 开头时才清
-                    //   （正常情况 m_surName 是空串，不要动它）。
+                    // v1.11.39（用户指定）：只清 m_givenName 里的 '@' 及其后面的内容。
+                    // 「m_surName 也以 '@' 开头」这个判断经 4 份存档核对（PC Save2/Save4 +
+                    // 手机 Save2/Save4）**从未命中**（surName 带 @ 的 0 条），已删除。
                     inst.m_givenName = "";
-                    try
-                    {
-                        var cur = inst.m_surName;
-                        if (!string.IsNullOrEmpty(cur) && cur[0] == '@') inst.m_surName = "";
-                    }
-                    catch { }
                 }
                 catch (Exception e)
                 {
