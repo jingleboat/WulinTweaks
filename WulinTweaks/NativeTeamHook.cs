@@ -107,12 +107,12 @@ namespace WulinTweaks
         }
 
         private static bool FakeJoined(IntPtr self, int io, IntPtr line)
-            => Dispatch(self, io, line, _origJoinedFn);
+            => Dispatch(self, io, line, _origJoinedFn, true);
 
         private static bool FakePartner(IntPtr self, int io, IntPtr line)
-            => Dispatch(self, io, line, _origPartnerFn);
+            => Dispatch(self, io, line, _origPartnerFn, false);
 
-        private static bool Dispatch(IntPtr self, int io, IntPtr line, CheckAllFn orig)
+        private static bool Dispatch(IntPtr self, int io, IntPtr line, CheckAllFn orig, bool isJoined)
         {
             TeamCondHits++;
             RelaxName.MaybeSync();   // v1.9.9：探测「剧情播放中」状态翻转
@@ -122,6 +122,10 @@ namespace WulinTweaks
             // （那个 ConditionPort 是空壳），改成按门指针判断，见 Patch_FlattenGate。
             // 注意：它有自己的开关（FlattenBranches），与本函数的总开关无关，所以放在 gate 之前。
             try { BranchFlatten.Try(self); } catch { }
+
+            // v1.11.47（用户指定）：IsJoinedTeamCondition（“曾经加入过队伍”）**不作为被放宽的条件**
+            // —— 放宽它等于允许“从未加入”也能触发本命事件；但它的判定必须按原版保留。
+            if (isJoined) return orig != null ? orig(self, io, line) : true;
 
             /* v1.11.27 修 bug：这里原来**没有**检查总开关。
              * 后果：配置里把「剧情触发时忽略队伍角色条件」(IgnoreTeamMemberCondition) 关掉之后，

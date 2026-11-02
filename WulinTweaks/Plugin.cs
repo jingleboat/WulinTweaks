@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.46";  // 1.11.46 可达性守恒改为按对比较（并集比较会误回滚）
+        public const string Version = "1.11.47";  // 1.11.47 配对白名单(仅HavePartnerCondition) + X类按region含剧情 + 门轨迹日志 + 不再放宽IsJoinedTeamCondition
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

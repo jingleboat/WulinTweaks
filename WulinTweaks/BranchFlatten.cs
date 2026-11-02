@@ -257,6 +257,14 @@ namespace WulinTweaks
                 IntPtr cb = condOf.TryGetValue(b, out var y) ? y : IntPtr.Zero;
                 if (ca == IntPtr.Zero || cb == IntPtr.Zero) continue;
 
+                // v1.11.47：**白名单**——只认「当前在队」这一类条件（HavePartnerCondition）。
+                // 以前只看 partnerID+Negate，于是「存活/死亡」(NpcDeadCondition)、关系值、位置等
+                // 同样带 partnerID 的条件也被当成在队门对，展平后两侧都强制放行 → 语义矛盾
+                // （实测 R10049-2 的 10063：石万三存活与死亡两侧都播）。
+                // IsJoinedTeamCondition 语义是「曾经加入过队伍」，与当前在队无关；
+                // SlgHavePartnerCondition 属 DLC 小游戏，均不参与。
+                if (!IsInTeamCond(ca) || !IsInTeamCond(cb)) continue;
+
                 int pa = Il2CppNative.Int32(ca, "partnerID");
                 int pb = Il2CppNative.Int32(cb, "partnerID");
                 if (pa <= 0 || pa != pb) continue;                 // partnerID<=0 不是「需要伙伴」
@@ -276,8 +284,11 @@ namespace WulinTweaks
 
                 // 只处理 A/B 类（至少一侧是「单个播放剧情节点」）。
                 // X 类（两侧都不是）形状不明，离线没验证过，这里不动，只计数。
-                bool s0 = IsStoryExit(outs, g0);
-                bool s1 = IsStoryExit(outs, g1);
+                // v1.11.47：改用「这一侧的可达集里是否含播放剧情节点」，
+                // 于是「门 → 设置标记 → 播放剧情」这类 X 类也能放开；
+                // 两侧都只有辅助节点（设标记/时间流逝）的仍然放弃。
+                bool s0 = SideHasStory(outs, g0);
+                bool s1 = SideHasStory(outs, g1);
                 if (!s0 && !s1) { xSkipped++; continue; }
 
                 pairs.Add(new Pair
@@ -432,6 +443,27 @@ namespace WulinTweaks
             int c = 0;
             for (int i = 0; i < ps.Count; i++) if (ps[i].BothStory) c++;
             return c;
+        }
+
+        /// <summary>v1.11.47：这个条件是不是「当前在队」这一类（HavePartnerCondition）。</summary>
+        private static bool IsInTeamCond(IntPtr cond)
+        {
+            try
+            {
+                string cn = Il2CppNative.ClassNameOf(cond);
+                return cn == "HavePartnerCondition";
+            }
+            catch { return false; }
+        }
+
+        /// <summary>v1.11.47：这一侧的可达集里是否含「播放剧情」节点。</summary>
+        private static bool SideHasStory(Dictionary<IntPtr, OutInfo> outs, IntPtr gate)
+        {
+            foreach (var n in Reach(gate, outs))
+            {
+                if (Il2CppNative.Str(n, "ScenarioKey") != null) return true;
+            }
+            return false;
         }
 
         /// <summary>这一侧是不是「单个播放剧情节点」——用来区分 A 类/B 类（只用于日志）。</summary>
