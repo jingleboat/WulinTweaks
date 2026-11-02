@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.44";  // 1.11.44 停用动态 Patch（启动闪退）；保留取消 region 相交排除
+        public const string Version = "1.11.45";  // 1.11.45 展平事务化：改线→环检测/可达性校验→失败整体回滚；去重表不可淘汰；重入保护
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

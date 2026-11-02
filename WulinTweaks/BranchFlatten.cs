@@ -78,8 +78,11 @@ namespace WulinTweaks
         /// 在图上套用补丁。anyNode 可以是图里任意节点（用它的 graph 指针去重）。
         /// 由 Patch_StoryPlayBegin（剧情开始播放）和 NativeTeamHook.Dispatch（条件判定）调用。
         /// </summary>
+        private static int _busy;   // v1.11.45：重入保护（条件判定可能跑在加载线程）
+
         internal static void Try(IntPtr anyNode)
         {
+            if (System.Threading.Interlocked.Exchange(ref _busy, 1) != 0) return;
             try
             {
                 if (Plugin.FlattenBranches == null || !Plugin.FlattenBranches.Value) return;
@@ -113,6 +116,7 @@ namespace WulinTweaks
             {
                 if (_logMiss++ < 6) Plugin.L.LogError("[flat] Try 异常: " + e);
             }
+            finally { System.Threading.Interlocked.Exchange(ref _busy, 0); }
         }
 
         /// <summary>
@@ -340,44 +344,85 @@ namespace WulinTweaks
 
             if (expand.Count == 0) { _done.Add(graph); return; }
 
-            // ---------- ⑤ 改线 + 接管门 ----------
+            // ---------- ⑤ 改线（事务化：先全改、再校验、不合格整体回滚） ----------
+            // v1.11.45：校验两条，缺一都会导致「剧情卡死」：
+            //   ① 无新增环 —— 新环必然经过某条被改的边 (src→g1)，所以只需判断 g1 能否回到 src；
+            //   ② 可达性守恒 —— 改线后 Reach(g1) 必须仍包含改线前的 Reach(g1)（汇合点不能丢）。
+            // 任一不过 → 逆序还原所有边 + 撤销门登记。
+            var beforeReach = new HashSet<IntPtr>();
+            foreach (var p in expand) beforeReach.UnionWith(Reach(p.G1, outs));
+
+            var undo = new List<(IntPtr Port, IntPtr OldT, IntPtr Src, IntPtr G1)>();
+            bool commitFail = false;
             int ok = 0, fail = 0;
+
             foreach (var p in expand)
             {
-                bool allOk = true;
                 foreach (var e in p.Exits)
                 {
-                    IntPtr src = e.Key, oldT = e.Value;
-                    var info = outs[src];
-                    if (info.Port == IntPtr.Zero || !RedirectEdge(info.Port, oldT, p.G1))
+                    IntPtr srcNode = e.Key, oldT = e.Value;
+                    if (!outs.TryGetValue(srcNode, out var info) || info.Port == IntPtr.Zero
+                        || !RedirectEdge(info.Port, oldT, p.G1))
                     {
-                        allOk = false;
-                        fail++;
+                        commitFail = true;
+                        break;
                     }
-                    else ok++;
+                    int idx = info.Targets.IndexOf(oldT);
+                    if (idx >= 0) info.Targets[idx] = p.G1;     // 同步内存模型，供环检测使用
+                    undo.Add((info.Port, oldT, srcNode, p.G1));
+                    ok++;
                 }
+                if (commitFail) break;
+            }
 
-                _gateForced.Add(p.G0);
-                _gateForced.Add(p.G1);
+            bool rolled = commitFail;
+            if (!rolled)
+            {
+                foreach (var u in undo)
+                {
+                    if (Reach(u.G1, outs).Contains(u.Src)) { rolled = true; break; }   // 新增环
+                }
+            }
+            if (!rolled)
+            {
+                var afterReach = new HashSet<IntPtr>();
+                foreach (var p in expand) afterReach.UnionWith(Reach(p.G1, outs));
+                if (!beforeReach.IsSubsetOf(afterReach)) rolled = true;               // 汇合点丢失
+            }
 
-                try { RelaxName.MarkRelaxed(p.Pid, graphName); } catch { }
+            if (rolled)
+            {
+                for (int i = undo.Count - 1; i >= 0; i--)
+                {
+                    var u = undo[i];
+                    // 还原连线（此时目标已是 G1，用 RedirectEdge 把它指回旧目标）
+                    try { RedirectEdge(u.Port, u.G1, u.OldT); } catch { }
+                }
+                ok = 0;
+                Plugin.L.LogWarning("[flat] 图 " + graphName + " 回滚：改线 " + undo.Count
+                                    + " 条后校验不通过（环或可达性），已全部还原");
+            }
+            else
+            {
+                foreach (var p in expand)
+                {
+                    _gateForced.Add(p.G0);
+                    _gateForced.Add(p.G1);
+                    try { RelaxName.MarkRelaxed(p.Pid, graphName); } catch { }
 
-                if (_logPair++ < 300)
-                    Plugin.L.LogInfo("[flat]   pid=" + p.Pid + (p.BothStory ? " (B 类)" : " (A 类)")
-                                     + " 在队门=" + Hex(p.G0) + " 不在队门=" + Hex(p.G1)
-                                     + " 内容 " + p.Region.Count + " 节点，改线 " + p.Exits.Count
-                                     + (allOk ? "" : " ⚠部分失败"));
+                    if (_logPair++ < 300)
+                        Plugin.L.LogInfo("[flat]   pid=" + p.Pid + (p.BothStory ? " (B 类)" : " (A 类)")
+                                         + " 在队门=" + Hex(p.G0) + " 不在队门=" + Hex(p.G1)
+                                         + " 内容 " + p.Region.Count + " 节点，改线 " + p.Exits.Count);
+                }
             }
 
             _done.Add(graph);
 
             if (_logGraph <= 200)
                 Plugin.L.LogInfo("[flat] 图 " + graphName + " 展开完成：改线 " + ok + " 条"
-                                 + (fail > 0 ? "，失败 " + fail + " 条" : "")
+                                 + (rolled ? "（已回滚）" : "")
                                  + "，接管门 " + _gateForced.Count + " 个（累计）");
-            if (fail > 0)
-                Plugin.L.LogError("[flat] ⚠ 图 " + graphName + " 有 " + fail
-                                  + " 条连线没改成 —— 该图走线处于半改状态，重启游戏可复原");
         }
 
         private static int CountB(List<Pair> ps)
