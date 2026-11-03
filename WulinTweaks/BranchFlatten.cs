@@ -348,6 +348,12 @@ namespace WulinTweaks
             // 而“让重叠部分只播一次”需要在重叠节点上做执行期标记，代价与风险都大于收益；
             // 两对都展开后执行期天然只走一条路径，不会重复播放。
             // v1.11.57：名单图的链式接续（必须在 region 法之前，且这些对随后跳过）
+            int[] forceOrder;
+            if (_forceOnly.TryGetValue(graphName ?? "", out forceOrder) && forceOrder.Length > 0 && pairs.Count > 0)
+            {
+                try { ApplyForceOnly(graphName, forceOrder, pairs); } catch (Exception e) { ModKit.Err("apply force", e); }
+            }
+
             int[] chainOrder;
             if (_chains.TryGetValue(graphName ?? "", out chainOrder) && chainOrder.Length >= 2 && pairs.Count >= 2)
             {
@@ -481,6 +487,30 @@ namespace WulinTweaks
             { "M5061-3",    new[] { 10005, 10098 } },
             { "R10039-6",   new[] { 20022, 10064 } },
         };
+
+        /// <summary>v1.11.59：只强制在队门放行、不改线的名单（结构与手机 v175 一致）。</summary>
+        private static readonly Dictionary<string, int[]> _forceOnly = new Dictionary<string, int[]> {
+            { "M2155-6",    new[] { 10009,10015,10018,10022,10025,10045,10050,10056,10064,10076,10084,10092,10094,20025 } },
+            { "Role5-15-2", new[] { 10001,10006,10009,10015,10018,10023,10025,10033,10037,10045,10050,10084,10090,10092,20001 } },
+        };
+
+        private static int ApplyForceOnly(string gn, int[] pids, List<Pair> pairs)
+        {
+            int hit = 0;
+            foreach (var pid in pids)
+            {
+                foreach (var p in pairs)
+                {
+                    if (p.Pid != pid) continue;
+                    _gateForced.Add(p.G0);
+                    p.Skip = true;
+                    hit++;
+                    break;
+                }
+            }
+            if (hit > 0) Plugin.L.LogInfo("[flat] 图 " + gn + " 仅强制放行 " + hit + " 道在队门（不改线）");
+            return hit;
+        }
 
         /// <summary>把名单里的一张图按 pid 顺序串起来：内容末端 → 下一对在队门。</summary>
         private static int ApplyChain(string gn, int[] order, List<Pair> pairs,
