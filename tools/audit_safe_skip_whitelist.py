@@ -29,7 +29,7 @@ import scan_flattenable as S
 REGION_CAP = 2000
 
 # 允许被绕过的：纯流程分支，不写任何存档状态
-SAFE_SKIP = {"流程判断", "选项", "注释", "「播放剧情」"}
+SAFE_SKIP = {"流程判断", "选项", "注释"}
 
 
 def main():

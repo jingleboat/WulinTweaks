@@ -43,25 +43,19 @@ namespace WulinTweaks
         private const int MaxRegion = 512;      // 独占内容节点上限
 
         /// <summary>
-        /// v1.11.65：展平改线会**跳过** region 对外出口的原目标。
-        /// 这里只允许跳过「纯流程分支、不写任何存档状态」的节点 —— 白名单，
-        /// 不在名单里的一律不改这一对。
+        /// v1.11.69：允许被跳过的，只有**纯流程分支**。
         ///
-        /// 为什么必须是白名单而不是黑名单：剧情资产不止 ModEditor.zip，
-        /// 还有 aa/config_assets_all.bundle 里的一大批（例如 R10136 一族 280 个资产）。
-        /// 黑名单靠"列出所有写状态的节点名"，遇到没见过的类型就漏；
-        /// 白名单则对未知类型默认拒绝改线，天然覆盖全部资产包。
+        /// ⚠️ 上一版把「播放剧情」也放进来了（理由：跳过它"只是这一段不播"，与原版 if/else
+        /// 只播一段语义一致）。**实测证明这个判断是错的**：开场图 R10021-4-1 的 5 条改线里
+        /// 4 条目标都是「播放剧情」子场景、1 条是「添加标记」，跳过之后开场后续整段不播，
+        /// 表现就是"游戏开场不触发"。剧情节点承载的是**实打实的内容**，不是可丢的分支壳子。
         ///
-        /// 全量统计（tools/audit_safe_skip_whitelist.py）：
-        ///   902 个可改线门对 → 717 个（79%）出口只落在这些节点上，可改线；
-        ///   185 个命中「时间流逝 / 添加标记 / 改变NPC关系值 / 设置自定义变量 …」→ 不改。
+        /// 现在只留这三类，它们不含任何剧情内容、不写任何状态：
+        ///   流程判断（HoldNode） / 选项（分支） / 注释（不执行）
         ///
-        /// - 流程判断：HoldNode，纯分支
-        /// - 选项：玩家选择分支
-        /// - 注释：不执行
-        /// - 「播放剧情」内容以 StoryScenarioNode 开头：跳过它只是"这一段不播"，
-        ///   与"原版 if/else 只播一段"的语义一致，不会写全局状态。
-        ///   （注意：它的**内部**若含写状态节点，那些节点本来也只在这段被播时才执行。）
+        /// 代价：可改线门对从 717/902 降到 422/902（47%）。这是正确的取舍 ——
+        /// "该展开的展开不了"远好于"剧情根本不触发"。
+        /// 判定用**类名**而不是字段：字段读取受 klass 解析影响，类名是稳定的。
         /// </summary>
         private static readonly HashSet<string> SafeSkipNodes = new HashSet<string>(StringComparer.Ordinal)
         {
@@ -70,26 +64,21 @@ namespace WulinTweaks
             "注释",
         };
 
-        /// <summary>
-        /// 是不是 StoryScenarioNode（「播放剧情」）。
-        /// ⚠️ 读字段抛异常时必须返回 **false**：返回 true 等于"当成剧情节点 → 允许跳过"，
-        /// 而异常恰恰说明我们对这个节点一无所知，只能按不安全处理。
-        /// </summary>
-        private static bool IsStoryNode(IntPtr node)
-        {
-            try { return Il2CppNative.Str(node, "ScenarioKey") != null; } catch { return false; }
-        }
-
-        /// <summary>这个节点被"跳过"是否安全（纯流程分支 / 播放入口 / 注释）。</summary>
+        /// <summary>这个节点被"跳过"是否安全（纯流程分支 / 注释）。</summary>
         private static bool IsSafeSkipNode(IntPtr node)
         {
             if (node == IntPtr.Zero) return false;
-            // 剧情节点：「播放剧情」，等同于"这一段不播"，不写状态
-            if (IsStoryNode(node)) return true;
             string tn = null;
-            try { tn = Il2CppNative.Str(node, "name"); } catch { return false; }
-            if (string.IsNullOrEmpty(tn)) return false;      // 读不到名字 → 保守拒绝
-            return SafeSkipNodes.Contains(tn);
+            try { tn = Il2CppNative.ClassNameOf(node); } catch { return false; }
+            if (string.IsNullOrEmpty(tn)) return false;      // 类名读不到 → 保守拒绝
+
+            // 类名形如 HoldNode / ChoiceNode / CommentNode；用节点名兜底判断
+            if (tn == "HoldNode" || tn == "CommentNode") return true;
+
+            string nm = null;
+            try { nm = Il2CppNative.Str(node, "name"); } catch { return false; }
+            if (string.IsNullOrEmpty(nm)) return false;
+            return SafeSkipNodes.Contains(nm);
         }
 
         // ---------------------------------------------------------------- 状态
