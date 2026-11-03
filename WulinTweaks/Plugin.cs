@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.62";  // 1.11.62 门通过时清陌生名（与手机 v166 对齐）
+        public const string Version = "1.11.63";  // 1.11.63 放宽与展平解耦（删除 region=0 限制）；移除仅强制通道
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
