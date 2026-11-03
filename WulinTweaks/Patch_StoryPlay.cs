@@ -94,9 +94,20 @@ namespace WulinTweaks
     [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
     internal static class Patch_GateTimesPrefix
     {
+        /// <summary>
+        /// v1.11.67：**保存 / 恢复，不能直接清 false。**
+        ///
+        /// `NoRelaxThisEval` 是全局静态，而 `HoldNode.CheckCondition` 是**递归**的：
+        /// 原版 CheckCondition 会推进剧情、进而判定下一道门，又进这个 Prefix。
+        /// 原来 Postfix 直接 `= false`，会把**外层**刚设好的状态冲掉 →
+        /// 同一段剧情，跑得深就出错、跑得浅就正常，也就是「有时可触发有时不行」。
+        ///
+        /// Harmony 的 `__state` 是每次调用独立的，正好用来存旧值，天然递归安全。
+        /// 手机端 v197 同样改法（`g_no_relax_eval` → `__thread` + 保存/恢复）。
+        /// </summary>
         private static void Prefix(HoldNode __instance, out bool __state)
         {
-            __state = false;
+            __state = NativeTeamHook.NoRelaxThisEval;      // 保存进入前的值
             try
             {
                 int t = 0; try { t = __instance.checkSucessTimes; } catch { }
@@ -106,7 +117,7 @@ namespace WulinTweaks
         }
         private static void Postfix(bool __state)
         {
-            NativeTeamHook.NoRelaxThisEval = false;
+            NativeTeamHook.NoRelaxThisEval = __state;      // 恢复，不是清零
         }
     }
 
