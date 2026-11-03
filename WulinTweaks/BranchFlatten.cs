@@ -42,6 +42,52 @@ namespace WulinTweaks
         private const int MaxNodes = 4096;      // 单图节点上限
         private const int MaxRegion = 512;      // 独占内容节点上限
 
+        /// <summary>
+        /// v1.11.65：展平改线会**跳过** region 对外出口的原目标。
+        /// 这里只允许跳过「纯流程分支、不写任何存档状态」的节点 —— 白名单，
+        /// 不在名单里的一律不改这一对。
+        ///
+        /// 为什么必须是白名单而不是黑名单：剧情资产不止 ModEditor.zip，
+        /// 还有 aa/config_assets_all.bundle 里的一大批（例如 R10136 一族 280 个资产）。
+        /// 黑名单靠"列出所有写状态的节点名"，遇到没见过的类型就漏；
+        /// 白名单则对未知类型默认拒绝改线，天然覆盖全部资产包。
+        ///
+        /// 全量统计（tools/audit_safe_skip_whitelist.py）：
+        ///   902 个可改线门对 → 717 个（79%）出口只落在这些节点上，可改线；
+        ///   185 个命中「时间流逝 / 添加标记 / 改变NPC关系值 / 设置自定义变量 …」→ 不改。
+        ///
+        /// - 流程判断：HoldNode，纯分支
+        /// - 选项：玩家选择分支
+        /// - 注释：不执行
+        /// - 「播放剧情」内容以 StoryScenarioNode 开头：跳过它只是"这一段不播"，
+        ///   与"原版 if/else 只播一段"的语义一致，不会写全局状态。
+        ///   （注意：它的**内部**若含写状态节点，那些节点本来也只在这段被播时才执行。）
+        /// </summary>
+        private static readonly HashSet<string> SafeSkipNodes = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "流程判断",
+            "选项",
+            "注释",
+        };
+
+        /// <summary>StoryScenarioNode 的名字是空/场景键，单独判定（见 IsSafeSkipNode）。</summary>
+        private static bool IsStoryNode(IntPtr node)
+        {
+            try { return Il2CppNative.Str(node, "ScenarioKey") != null; } catch { return true; }
+        }
+
+        /// <summary>这个节点被"跳过"是否安全（纯流程分支 / 播放入口 / 注释）。</summary>
+        private static bool IsSafeSkipNode(IntPtr node)
+        {
+            if (node == IntPtr.Zero) return false;
+            // 剧情节点：「播放剧情」，等同于"这一段不播"，不写状态
+            if (IsStoryNode(node)) return true;
+            string tn = null;
+            try { tn = Il2CppNative.Str(node, "name"); } catch { return false; }
+            if (string.IsNullOrEmpty(tn)) return false;      // 读不到名字 → 保守拒绝
+            return SafeSkipNodes.Contains(tn);
+        }
+
         // ---------------------------------------------------------------- 状态
         /// <summary>被接管、一律判真的门（HoldNode 指针）。</summary>
         private static readonly HashSet<IntPtr> _gateForced = new HashSet<IntPtr>();
@@ -211,9 +257,29 @@ namespace WulinTweaks
             int n = Il2CppNative.ListCount(list);
             if (n <= 2 || n > MaxNodes)
             {
-                _processed.Add(graphName);
-                _done.Add(graph);
-                Plugin.L.LogWarning("[flat] 图 " + graphName + " 节点数异常（" + n + "），跳过");
+                /* v1.11.65：**这里绝对不能再 Add(_processed)。**
+                 *
+                 * _processed 的唯一消费者是 RelaxAllowed，语义是「这张图展平已经处理过 →
+                 * 只有登记进 _relaxOk 的条件才准放宽」。而这条早退分支是"节点表没读到"
+                 * （n = 0 基本只可能是 Ptr(graph,"nodes") 这一次失败），它一个 RelaxOk 都没登记。
+                 * 一旦把图名塞进 _processed，该图**所有**「某人在队」的条件就永久不放宽
+                 * （本次进程内），表现正是「某事件有时不触发；关掉展平重启就恢复」。
+                 *
+                 * 现在：只记尝试次数、不碰 _processed，给有限次重试；重试到上限才放弃展开
+                 * （放宽始终不受影响）。_attempts / MaxAttempts 早就声明了但从未使用，这里正式用上。 */
+                int a;
+                _attempts.TryGetValue(graph, out a);
+                _attempts[graph] = ++a;
+                if (a < MaxAttempts)
+                {
+                    if (_logMiss++ < 50)
+                        Plugin.L.LogWarning("[flat] 图 " + graphName + " 节点数异常（" + n
+                                            + "），本次跳过、下次重试（" + a + "/" + MaxAttempts + "）");
+                    return;
+                }
+                _done.Add(graph);          // 重试到上限：只放弃"展开"，放宽照常
+                Plugin.L.LogWarning("[flat] 图 " + graphName + " 节点数异常（" + n
+                                    + "），已重试 " + a + " 次，放弃展开");
                 return;
             }
 
@@ -256,6 +322,17 @@ namespace WulinTweaks
                     catch { }
                 }
             }
+
+            /* v1.11.65：入边计数 —— 链式接续要判断"能不能安全穿过某个节点"，
+             * 只有**单入单出**的节点才允许穿过（改它的出口不会影响别的路径）。 */
+            var ins = new Dictionary<IntPtr, int>(n);
+            foreach (var kv in outs)
+                foreach (var t in kv.Value.Targets)
+                {
+                    int c;
+                    ins.TryGetValue(t, out c);
+                    ins[t] = c + 1;
+                }
 
             // ---------- ② 找互补门对 ----------
             var pairs = new List<Pair>();
@@ -358,15 +435,31 @@ namespace WulinTweaks
             // 完整包住 → 老规则两对都放弃 → 10054 的剧情永远不播。
             // 而“让重叠部分只播一次”需要在重叠节点上做执行期标记，代价与风险都大于收益；
             // 两对都展开后执行期天然只走一条路径，不会重复播放。
-            // v1.11.57：名单图的链式接续（必须在 region 法之前，且这些对随后跳过）
-            int[] chainOrder;
-            if (_chains.TryGetValue(graphName ?? "", out chainOrder) && chainOrder.Length >= 2 && pairs.Count >= 2)
-            {
-                try { ApplyChain(graphName, chainOrder, pairs, outs, _gateCls); } catch (Exception e) { ModKit.Err("apply chain", e); }
-            }
+            //
+            // ===== v1.11.65：链式接续**停用**，理由有据，不是图省事 =====
+            //
+            // 它当初是为了解决"放宽后 p 的支线演完就结束、后一个角色的门轮不到"。
+            // 用同一份剧情资产实测，这个前提**不成立**：
+            //   · tools/audit_chain_patch_v2.py：名单 13 条里 11 条的 region
+            //     （= reach(G0) − reach(G1)，即"该角色的独占内容"）**为空** ——
+            //     说明放宽这些对根本不改变后续走向，无从堵死。
+            //   · R10049-2-1 实际连线：_4_2（10061 的剧情）→ 添加标记 →
+            //     **入边=9 的共享分派门** → 继续问 20243/20231/42161/42162/42163…
+            //     也就是所有角色的支线本来就汇回同一个分派门，10098 的门自然会被问到。
+            //
+            // 而它带来的代价是实打实的：旧实现"只跳一层 + 硬编码添加标记/追加简介"，
+            // 遇到「时间流逝 Num=8」就直接改它前面那条边 → **时间不推进**（R10005-5 实测），
+            // 依赖时间的无关剧情全部错位。这正是"开了分支展开后某些剧情触发不了"的成因。
+            //
+            // 所以：不串。名单与 ApplyChain 保留（v1.11.65 已把 ApplyChain 改成 region 判据，
+            // 需要时可单独放开验证），默认一个都不调。
+            //
+            //   int[] chainOrder;
+            //   if (_chains.TryGetValue(graphName ?? "", out chainOrder) && chainOrder.Length >= 2 && pairs.Count >= 2)
+            //       ApplyChain(graphName, chainOrder, pairs, outs, ins, _gateCls);
 
             var expand = new List<Pair>();
-            int skippedOverlap = 0, skippedExits = 0, skippedEmpty = 0;
+            int skippedOverlap = 0, skippedExits = 0, skippedEmpty = 0, skippedGlobal = 0;
             foreach (var p in pairs)
             {
                 if (p.Region.Count == 0) { skippedEmpty++; continue; }
@@ -380,7 +473,19 @@ namespace WulinTweaks
                 }
 
                 if (p.Skip) continue;      // v1.11.57：已被链式补丁接管的对，不再走 region 法
-                // v1.11.63：**解耦** —— region=0 只是“不改线”，不因此禁止放宽。
+
+                /* v1.11.65：**白名单保护** —— "局部改线不得影响全局触发"的硬闸。
+                 * 改线的本质是「把 region 对外出口改指到不在队门」，原目标被跳过。
+                 * 这条只放行"纯流程分支"；只要有一个出口落到写状态的节点上，
+                 * 或者节点名读不出来（后果不可预期），就放弃改这一对。
+                 * 详见 SafeSkipNodes 的注释与 tools/audit_safe_skip_whitelist.py。 */
+                bool unsafePair = false;
+                foreach (var e in p.Exits)
+                {
+                    if (!IsSafeSkipNode(e.Value)) { unsafePair = true; break; }
+                }
+                if (unsafePair) { skippedGlobal++; continue; }
+
                 try { RelaxOkAdd(graphName, condOf[p.First]); RelaxOkAdd(graphName, condOf[p.Second]); } catch { }
                 expand.Add(p);
             }
@@ -390,6 +495,7 @@ namespace WulinTweaks
                                  + "，展开 " + expand.Count + "（B 类 "
                                  + CountB(expand) + "），跳过 重叠" + skippedOverlap
                                  + "/空或无出口" + (skippedEmpty + skippedExits)
+                                 + "/全局状态保护" + skippedGlobal
                                  + "/非A-B类" + xSkipped);
 
             if (expand.Count == 0) { _done.Add(graph); return; }
@@ -497,41 +603,99 @@ namespace WulinTweaks
             { "R10039-6",   new[] { 20022, 10064 } },
         };
 
-        /// <summary>把名单里的一张图按 pid 顺序串起来：内容末端 → 下一对在队门。</summary>
+        /// <summary>
+        /// 把名单里的一张图按 pid 顺序串起来：内容末端 → 下一对在队门。
+        ///
+        /// v1.11.65 重写：**不再"只跳一层 + 硬编码两个节点名"**。
+        ///
+        /// 为什么要串：放宽会让 p 的在队条件判真 → 流程走进 p 的独占支线，而那条支线
+        /// 往往以「添加标记」之类的收尾节点结束、不回到主线 → 后面角色（比如鱼薇儿 10098）
+        /// 的门永远轮不到。串起来就是把 p 内容的出口接到 q 的在队门，保证链上每人都能演。
+        ///
+        /// 旧实现的 bug：只前瞻一层，且只认「添加标记」「追加简介」两个名字。
+        /// 遇到「时间流逝（Num=8）」这种节点就停在前一个节点上，把这条边改掉 →
+        /// **时间流逝被整个跳过**（R10005-5 实测），游戏时间不推进，连累无关剧情。
+        /// 遇到「播放剧情 X」同理，直接砍掉那一段。
+        ///
+        /// 现在：从内容起点开始，沿着**单入单出**的节点一路走到头，改最后一个节点的出口。
+        ///   · 时间流逝 / 添加标记 / 追加简介 / 写入记事本 / 关系值 … 只要单入单出，全部保留执行
+        ///   · 一旦遇到分支（出口 ≠ 1）或多入节点（改它会波及别的路径）→ 放弃这一对，不改线
+        /// 放弃是安全的：不放线时后面角色的门能不能轮到，由"未接管禁止放宽"那条兜底
+        /// （见 TeamRule / flatten_relax_forbidden 的对称实现）。
+        /// </summary>
         private static int ApplyChain(string gn, int[] order, List<Pair> pairs,
                                       Dictionary<IntPtr, OutInfo> outs,
+                                      Dictionary<IntPtr, int> ins,
                                       Dictionary<IntPtr, string> gateCls)
         {
-            int applied = 0;
+            int applied = 0, gaveUp = 0;
             for (int i = 0; i + 1 < order.Length; i++)
             {
                 Pair p = null, q = null;
                 foreach (var x in pairs) { if (x.Pid == order[i]) p = x; if (x.Pid == order[i + 1]) q = x; }
                 if (p == null || q == null) continue;
+
                 OutInfo fo;
                 if (!outs.TryGetValue(p.G0, out fo) || fo.Targets.Count < 1) continue;
-                IntPtr scene = fo.Targets[0];
-                OutInfo so;
-                if (!outs.TryGetValue(scene, out so) || so.Targets.Count < 1) continue;
-                IntPtr src = scene;
-                OutInfo to;
-                if (outs.TryGetValue(so.Targets[0], out to) && to.Targets.Count == 1)
+                IntPtr src = fo.Targets[0];            // p 的在队门第一条出边 = 内容起点
+
+                // 沿单入单出的节点一路走到底（最多 64 跳，防意外环路）
+                bool ok = true;
+                for (int guard = 0; guard < 64; guard++)
                 {
-                    string nm = null;
-                    try { nm = Il2CppNative.Str(so.Targets[0], "name"); } catch { }
-                    if (nm == "添加标记" || nm == "追加简介") src = so.Targets[0];
+                    OutInfo cur;
+                    if (!outs.TryGetValue(src, out cur)) { ok = false; break; }
+                    if (cur.Targets.Count != 1) { ok = false; break; }   // 分支：不知道该改哪条
+
+                    IntPtr nxt = cur.Targets[0];
+                    // 撞到门（含本对/下一对的四道门）→ 到此为止，改 src 的出口
+                    if (gateCls.ContainsKey(nxt) || nxt == p.G0 || nxt == p.G1 ||
+                        nxt == q.G0 || nxt == q.G1) break;
+
+                    OutInfo no;
+                    if (!outs.TryGetValue(nxt, out no)) { ok = false; break; }
+                    if (no.Targets.Count != 1) { ok = false; break; }    // 下一个是分支 → 只能停，但停在前一个节点上会跳过它
+
+                    int inc;
+                    if (!ins.TryGetValue(nxt, out inc) || inc != 1) { ok = false; break; } // 多入 → 改它会波及别的路径
+
+                    src = nxt;                          // 单入单出 → 穿过去（副作用节点照常执行）
                 }
+                if (!ok)
+                {
+                    gaveUp++;
+                    if (_logPair++ < 300)
+                        Plugin.L.LogInfo("[flat] 图 " + gn + " 链式接续放弃 pid=" + p.Pid
+                                         + " → " + q.Pid + "：末端不是单入单出，改了会丢副作用");
+                    continue;
+                }
+
                 OutInfo se;
-                if (!outs.TryGetValue(src, out se) || se.Targets.Count < 1) continue;
-                if (!RedirectEdge(se.Port, se.Targets[0], q.G0)) continue;
+                if (!outs.TryGetValue(src, out se) || se.Targets.Count != 1) { gaveUp++; continue; }
+                if (!RedirectEdge(se.Port, se.Targets[0], q.G0)) { gaveUp++; continue; }
                 se.Targets[0] = q.G0;
                 applied++;
                 _gateForced.Add(p.G0); _gateForced.Add(q.G0);
                 p.Skip = true; q.Skip = true;
-                Plugin.L.LogInfo("[flat] 图 " + gn + " 链式接续：pid " + p.Pid + " → " + q.Pid);
+                if (_logPair++ < 300)
+                    Plugin.L.LogInfo("[flat] 图 " + gn + " 链式接续：pid " + p.Pid
+                                     + " 内容末端(" + NodeLabel(src) + ") → pid " + q.Pid + " 在队门");
             }
-            if (applied > 0) Plugin.L.LogInfo("[flat] 图 " + gn + " 链式接续完成：改线 " + applied + " 条");
+            if (applied > 0 || gaveUp > 0)
+                Plugin.L.LogInfo("[flat] 图 " + gn + " 链式接续：改线 " + applied
+                                 + " 条，放弃 " + gaveUp + " 条");
             return applied;
+        }
+
+        private static string NodeLabel(IntPtr nd)
+        {
+            try
+            {
+                string sk = Il2CppNative.Str(nd, "ScenarioKey");
+                if (sk != null) return "播放剧情 " + sk;
+                return Il2CppNative.Str(nd, "name") ?? "?";
+            }
+            catch { return "?"; }
         }
 
         private static int CountB(List<Pair> ps)
