@@ -30,6 +30,8 @@ namespace WulinTweaks
         private const int RVA_PARTNER_CHECK = 0x10F2230;   // HavePartnerCondition.CheckAllConnectNode
 
         private static IntPtr _baseCheck;
+        /// <summary>v1.11.70：基类 ConditionNode.CheckAllConnectNode 的委托，用于"只跳过队友这一条"。</summary>
+        private static CheckAllFn _baseFn;
         private static CheckAllFn _origJoinedFn, _origPartnerFn;
 
         // 两个独立委托，各自持有对应的原函数；保持引用防 GC
@@ -70,6 +72,12 @@ namespace WulinTweaks
             try
             {
                 _baseCheck = moduleBase + RVA_BASE_CHECK;
+                try
+                {
+                    _baseFn = Marshal.GetDelegateForFunctionPointer<CheckAllFn>(_baseCheck);
+                    Plugin.L.LogInfo("[dobby] 基类 CheckAllConnectNode 委托已就绪 @ " + _baseCheck.ToString("X"));
+                }
+                catch (Exception e) { ModKit.Err("make base CheckAllConnectNode delegate", e); }
 
                 int r1 = DobbyHook(moduleBase + RVA_JOINED_CHECK,
                     Marshal.GetFunctionPointerForDelegate(_fakeJoined), out var o1);
@@ -162,10 +170,25 @@ namespace WulinTweaks
 
             if (!relax) return false;
             RelaxedThisEval = true;
-
-            // v1.11.61：**只覆盖本条件节点的返回值**，不再调基类。
-            // 调基类会把整条条件链一起放行（实测：挂「大地图区域」的门也被放行 → 剧情连播多遍）。
             try { MarkRelaxed(self); } catch { }
+
+            /* v1.11.70：**改回 v137 的做法 —— 放宽队友条件后调用基类，由基类检查其余条件。**
+             *
+             * v1.11.61 曾经改成 `return true`，理由是"调基类会把整条条件链一起放行，
+             * 导致剧情连播多遍"。但那个改动把**同一道门上的其它条件**也一起跳过了：
+             *   开场剧情的门同时挂着「队友在队」和「经过 3 时辰」，
+             *   放宽队友条件后直接 return true → 时辰根本没被检查 →
+             *   门在不该通过时通过、走错分支、times 被消耗 → 真正到时辰反而不播。
+             *   这正是用户报的「开场没触发」，也是手机端 v177 的同一个错误。
+             *
+             * 正确语义：只丢掉「队友在队」这一条，其余条件照检 —— 交给基类
+             * ConditionNode.CheckAllConnectNode。基类地址 _baseCheck 在 Install 时已拿好。
+             * 若再出现"连播多遍"，那是基类之外的问题，不该靠跳过其它条件来掩盖。 */
+            try
+            {
+                if (_baseFn != null) return _baseFn(self, io, line);
+            }
+            catch (Exception e) { ModKit.Err("call base CheckAllConnectNode", e); }
             return true;
         }
 
