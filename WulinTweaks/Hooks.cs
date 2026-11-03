@@ -314,8 +314,14 @@ namespace WulinTweaks
             // 原来这里是 16，太低了：正常一段交互剧情一帧内推进会轻易超过 16 步，
             // 被当成死循环截断 → 剧情停在半路、事件不弹（实测日志里出现了
             // 「ContinueArrange 同帧已递归 16 层，阻断这一层」，而 [once]/[blacklist] 都是 0）。
-            // 真正的空转是「没有上界」的递归，256 已经足够兜住栈，又远高于正常推进量。
-            private const int MaxDepth = 256;
+            // 之后调到 256，**实测开场仍然撞顶**：
+            //   [Warning] ContinueArrange 同帧已递归 256 层，阻断这一层
+            // 而这一帧正是开场（Role1-1 → Role1-2 → Role1-3 连播）。被阻断 → 剧情停在那一步。
+            //
+            // v1.11.70：256 → 4096。依据：ContinueArrange 栈帧约 0xd0 字节
+            // （手机端 CA_MAX_DEPTH 的注释里算过），4096 层仅占约 1 MB，
+            // 对 8 MB 线程栈仍留 8 倍余量。真正的死循环远不止 4096 层，照样拦得住。
+            private const int MaxDepth = 4096;
 
             private static int _depth;
             private static int _frame = -1;
