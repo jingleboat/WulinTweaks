@@ -93,46 +93,72 @@ namespace WulinTweaks
     [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
     internal static class Patch_FlattenGate
     {
-        private static readonly System.Collections.Generic.Dictionary<IntPtr, bool> _last =
-            new System.Collections.Generic.Dictionary<IntPtr, bool>();
-        private static int _traceN;
-
-        /// <summary>v1.11.48：门的执行轨迹（只看状态变化，避免热路径刷屏）。</summary>
-        private static void Trace(HoldNode node, bool result)
+        /// <summary>
+        /// v1.11.55（S1）：已被展平接管的门 —— **Prefix 直接短路，不执行原版**。
+        /// 原版 CheckCondition 内部会把 checkSucessTimes +1，"先调再覆盖"等于白耗原生次数；
+        /// 展平的"两侧各播一次"由改线保证，不需要原生次数参与。
+        /// </summary>
+        private static bool Prefix(HoldNode __instance, ref bool __result)
         {
             try
             {
-                if (node == null || _traceN >= 400) return;
-                IntPtr p = node.Pointer;
-                bool prev;
-                if (_last.TryGetValue(p, out prev) && prev == result) return;
-                _last[p] = result;
-                _traceN++;
-                string gn = null;
-                try { gn = node.graph == null ? null : node.graph.name; } catch { }
-                bool inTeam;
-                int pid = BranchFlatten.GatePid(p, out inTeam);
-                int times = 0;
-                try { times = node.checkSucessTimes; } catch { }
-                Plugin.L.LogInfo("[gate] 图=" + (gn ?? "?") + " 门=" + p.ToString("X")
-                                 + " pid=" + pid + " 类=" + BranchFlatten.GateCls(p)
-                                 + " 侧=" + (pid <= 0 ? "?" : (inTeam ? "在队" : "不在队"))
-                                 + " times=" + times
-                                 + " forced=" + (BranchFlatten.IsGateForced(p) ? "Y" : "N")
-                                 + " → " + (result ? "通过" : "不通过"));
+                if (__instance == null || !BranchFlatten.IsGateForced(__instance.Pointer)) return true;
+                int t = 0; try { t = __instance.checkSucessTimes; } catch { }
+                __result = true;
+                GateTrace.Log(__instance, true, "FLATTENED", t, t);
+                return false;          // 跳过原版
             }
-            catch { }
+            catch (Exception e) { ModKit.Err("patch flatten gate prefix", e); return true; }
         }
+    }
 
+    /// <summary>v1.11.55（S1.5）：非展平门的判定轨迹，带"通过来源"标记。</summary>
+    [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
+    internal static class Patch_GateTrace
+    {
         private static void Postfix(HoldNode __instance, ref bool __result)
         {
             try
             {
-                if (__instance != null && BranchFlatten.IsGateForced(__instance.Pointer) && !__result)
-                    __result = true;
-                Trace(__instance, __result);
+                if (__instance == null) return;
+                if (BranchFlatten.IsGateForced(__instance.Pointer)) return;   // 已由 Prefix 记录
+                int t = 0; try { t = __instance.checkSucessTimes; } catch { }
+                string src = Hooks.HoldOnceGuard.SuppressedThisEval ? "GUARDED"
+                           : (__result && NativeTeamHook.RelaxedThisEval ? "RELAXED"
+                           : (__result ? "VANILLA" : "VANILLA_FAIL"));
+                GateTrace.Log(__instance, __result, src, t, t);
             }
-            catch (Exception e) { ModKit.Err("patch flatten gate", e); }
+            catch { }
+        }
+    }
+
+    /// <summary>v1.11.55：两端同构的 [gate] 轨迹输出。</summary>
+    internal static class GateTrace
+    {
+        private static readonly System.Collections.Generic.Dictionary<IntPtr, string> _last =
+            new System.Collections.Generic.Dictionary<IntPtr, string>();
+        private static int _n;
+
+        internal static void Log(HoldNode node, bool result, string src, int t0, int t1)
+        {
+            if (node == null || _n >= 600) return;
+            IntPtr p = node.Pointer;
+            string key = (result ? "1" : "0") + src;
+            string prev;
+            if (_last.TryGetValue(p, out prev) && prev == key) return;
+            _last[p] = key;
+            _n++;
+            string gn = null;
+            try { gn = node.graph == null ? null : node.graph.name; } catch { }
+            bool inTeam;
+            int pid = BranchFlatten.GatePid(p, out inTeam);
+            Plugin.L.LogInfo("[gate] 图=" + (gn ?? "?") + " 门=" + p.ToString("X")
+                             + " pid=" + pid + " 类=" + BranchFlatten.GateCls(p)
+                             + " 侧=" + (pid <= 0 ? "?" : (inTeam ? "在队" : "不在队"))
+                             + " times=" + t0 + "→" + t1
+                             + " forced=" + (BranchFlatten.IsGateForced(p) ? "Y" : "N")
+                             + " 源=" + src
+                             + " → " + (result ? "通过" : "不通过"));
         }
     }
 

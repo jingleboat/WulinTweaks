@@ -112,6 +112,9 @@ namespace WulinTweaks
         private static bool FakePartner(IntPtr self, int io, IntPtr line)
             => Dispatch(self, io, line, _origPartnerFn, false);
 
+        /// <summary>v1.11.55：本次门判定里是否发生过"放宽"（供 [gate] 源标记）。</summary>
+        internal static bool RelaxedThisEval;
+
         private static bool Dispatch(IntPtr self, int io, IntPtr line, CheckAllFn orig, bool isJoined)
         {
             TeamCondHits++;
@@ -145,6 +148,7 @@ namespace WulinTweaks
                     + " graph=" + (TeamRule.GraphNameOf(self) ?? "?")
                     + " relax=" + relax + " calls=" + _calls);
 
+            if (relax) RelaxedThisEval = true;
             if (!relax)
             {
                 // 不放宽：执行原版子类实现

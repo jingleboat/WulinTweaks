@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.53";  // 1.11.53 [gate] 增加 times=[once] 注明救回
+        public const string Version = "1.11.55";  // 1.11.55 S1 展平门不调原版(不计times) + S1.5 [gate] 源标记
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

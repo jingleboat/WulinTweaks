@@ -424,7 +424,10 @@ namespace WulinTweaks
         {
             private static int _warned;
 
-            static void Prefix(out int __state) { __state = NativeTeamHook.TeamCondHits; }
+            /// <summary>v1.11.55：本次 CheckCondition 是否被守卫压过（供 [gate] 源标记）。</summary>
+            internal static bool SuppressedThisEval;
+
+            static void Prefix(out int __state) { __state = NativeTeamHook.TeamCondHits; SuppressedThisEval = false; }
 
             static void Postfix(HoldNode __instance, ref bool __result, int __state)
             {
@@ -432,6 +435,8 @@ namespace WulinTweaks
                 {
                     if (!Plugin.IgnoreTeamCondition.Value) return;
                     if (!__result) return;
+                    // v1.11.55（S1）：展平接管的门不进入守卫
+                    if (BranchFlatten.IsGateForced(__instance.Pointer)) return;
                     if (NativeTeamHook.TeamCondHits == __state) return;    // 本次没检查队友条件 → 不干预
                     if (__instance.checkSucessTimes == 0) return;          // 还没成功过：正常放行
 
@@ -441,6 +446,7 @@ namespace WulinTweaks
                         return;                                            // 例外：交给原版语义
 
                     __result = false;
+                    SuppressedThisEval = true;
 
                     if (_warned < 60)          // v1.11.42：8 → 60（诊断用）
                     {

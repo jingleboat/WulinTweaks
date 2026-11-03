@@ -245,6 +245,13 @@ namespace WulinTweaks
                 if (condOf[nd] != IntPtr.Zero)
                 {
                     try { _gateCls[nd] = Il2CppNative.ClassNameOf(condOf[nd]) ?? ""; } catch { }
+                    try
+                    {
+                        int p2 = Il2CppNative.Int32(condOf[nd], "partnerID");
+                        bool n2 = Il2CppNative.Byte(condOf[nd], "Negate") != 0;
+                        _gatePidAll[nd] = new KeyValuePair<int, bool>(p2, !n2);
+                    }
+                    catch { }
                 }
             }
 
@@ -481,6 +488,9 @@ namespace WulinTweaks
         private static readonly Dictionary<IntPtr, KeyValuePair<int, bool>> _gateInfo =
             new Dictionary<IntPtr, KeyValuePair<int, bool>>();
         private static readonly Dictionary<IntPtr, string> _gateCls = new Dictionary<IntPtr, string>();
+        // v1.11.54：非白名单门也记一份 (pid, 侧别)，按**字段名**读（各子类偏移不同）
+        private static readonly Dictionary<IntPtr, KeyValuePair<int, bool>> _gatePidAll =
+            new Dictionary<IntPtr, KeyValuePair<int, bool>>();
 
         internal static string GateCls(IntPtr gate)
         {
@@ -492,6 +502,7 @@ namespace WulinTweaks
             inTeam = false;
             KeyValuePair<int, bool> v;
             if (_gateInfo.TryGetValue(gate, out v)) { inTeam = v.Value; return v.Key; }
+            if (_gatePidAll.TryGetValue(gate, out v)) { inTeam = v.Value; return v.Key; }   // v1.11.54
             return 0;
         }
 
