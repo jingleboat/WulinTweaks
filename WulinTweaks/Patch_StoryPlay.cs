@@ -94,20 +94,38 @@ namespace WulinTweaks
     [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
     internal static class Patch_GateTimesPrefix
     {
+        /// <summary>本门判定期间需要保存/恢复的全部跨 patch 状态。</summary>
+        private struct GateEvalState
+        {
+            public bool NoRelax;
+            public bool Relaxed;
+        }
+
         /// <summary>
         /// v1.11.67：**保存 / 恢复，不能直接清 false。**
         ///
-        /// `NoRelaxThisEval` 是全局静态，而 `HoldNode.CheckCondition` 是**递归**的：
-        /// 原版 CheckCondition 会推进剧情、进而判定下一道门，又进这个 Prefix。
-        /// 原来 Postfix 直接 `= false`，会把**外层**刚设好的状态冲掉 →
-        /// 同一段剧情，跑得深就出错、跑得浅就正常，也就是「有时可触发有时不行」。
+        /// `NoRelaxThisEval` / `RelaxedThisEval` 都是全局静态，而 `HoldNode.CheckCondition`
+        /// 是**递归**的（原版 CheckCondition 会推进剧情、进而判定下一道门，又进这里）。
+        /// 原来 Postfix 直接 `NoRelaxThisEval = false`，会把**外层**刚设好的状态冲掉 →
+        /// 同一段剧情跑得深就出错、跑得浅就正常，也就是「有时可触发有时不行」。
         ///
-        /// Harmony 的 `__state` 是每次调用独立的，正好用来存旧值，天然递归安全。
-        /// 手机端 v197 同样改法（`g_no_relax_eval` → `__thread` + 保存/恢复）。
+        /// ⚠️ 还必须保证本 Prefix **一定执行**：Harmony 在某个 prefix 返回 false 之后会
+        /// **跳过后续还没跑的 prefix**，但 **postfix 全部照跑**。本类若排在
+        /// `Patch_FlattenGate`（唯一 return false 的那个）之后，Prefix 不执行 → `__state`
+        /// 是默认 false → Postfix 反而把外层设成 false，比原来更糟。
+        /// 所以用 `HarmonyPriority(Priority.First)` 把它钉在最前面。
+        ///
+        /// 手机端 v197 同一处改法（`g_no_relax_eval` 改 `__thread` + 保存/恢复）。
         /// </summary>
-        private static void Prefix(HoldNode __instance, out bool __state)
+        [HarmonyPriority(Priority.First)]
+        private static void Prefix(HoldNode __instance, out GateEvalState __state)
         {
-            __state = NativeTeamHook.NoRelaxThisEval;      // 保存进入前的值
+            __state = new GateEvalState
+            {
+                NoRelax = NativeTeamHook.NoRelaxThisEval,
+                Relaxed = NativeTeamHook.RelaxedThisEval,
+            };
+            NativeTeamHook.RelaxedThisEval = false;        // 本门判定从"没放宽"开始
             try
             {
                 int t = 0; try { t = __instance.checkSucessTimes; } catch { }
@@ -115,9 +133,10 @@ namespace WulinTweaks
             }
             catch { }
         }
-        private static void Postfix(bool __state)
+        private static void Postfix(GateEvalState __state)
         {
-            NativeTeamHook.NoRelaxThisEval = __state;      // 恢复，不是清零
+            NativeTeamHook.NoRelaxThisEval = __state.NoRelax;   // 恢复，不是清零
+            NativeTeamHook.RelaxedThisEval = __state.Relaxed;
         }
     }
 
