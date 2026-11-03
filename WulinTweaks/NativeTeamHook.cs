@@ -139,6 +139,12 @@ namespace WulinTweaks
             if (Plugin.IgnoreTeamCondition == null || !Plugin.IgnoreTeamCondition.Value)
                 return orig != null ? orig(self, io, line) : true;
 
+            // v1.11.56（用户要求 1）：**先按原版判定；通过就不消耗放额度**
+            bool r0;
+            try { r0 = orig != null ? orig(self, io, line) : true; }
+            catch { r0 = true; }
+            if (r0) return true;
+
             bool relax;
             try { relax = TeamRule.ShouldRelax(self); }
             catch { relax = true; }
@@ -148,13 +154,8 @@ namespace WulinTweaks
                     + " graph=" + (TeamRule.GraphNameOf(self) ?? "?")
                     + " relax=" + relax + " calls=" + _calls);
 
-            if (relax) RelaxedThisEval = true;
-            if (!relax)
-            {
-                // 不放宽：执行原版子类实现
-                if (orig != null) return orig(self, io, line);
-                return true;
-            }
+            if (!relax) return false;
+            RelaxedThisEval = true;
 
             // 放宽：走基类实现（与手机端 base_check_all 一致）
             try

@@ -192,7 +192,8 @@ namespace WulinTweaks
 
         private sealed class Pair
         {
-            public IntPtr G0;      // Negate = 0（在队侧）
+            public bool Skip;      // v1.11.57：本对由链式补丁接管，跳过 region 法
+        public IntPtr G0;      // Negate = 0（在队侧）
             public IntPtr G1;      // Negate = 1（不在队侧）
             public int Pid;
             public bool BothStory; // 两侧都是单节点剧情 = B 类
@@ -346,6 +347,13 @@ namespace WulinTweaks
             // 完整包住 → 老规则两对都放弃 → 10054 的剧情永远不播。
             // 而“让重叠部分只播一次”需要在重叠节点上做执行期标记，代价与风险都大于收益；
             // 两对都展开后执行期天然只走一条路径，不会重复播放。
+            // v1.11.57：名单图的链式接续（必须在 region 法之前，且这些对随后跳过）
+            int[] chainOrder;
+            if (_chains.TryGetValue(graphName ?? "", out chainOrder) && chainOrder.Length >= 2 && pairs.Count >= 2)
+            {
+                try { ApplyChain(graphName, chainOrder, pairs, outs, _gateCls); } catch (Exception e) { ModKit.Err("apply chain", e); }
+            }
+
             var expand = new List<Pair>();
             int skippedOverlap = 0, skippedExits = 0, skippedEmpty = 0;
             foreach (var p in pairs)
@@ -360,6 +368,7 @@ namespace WulinTweaks
                     if (p.Region.Overlaps(q.Region)) { skippedOverlap++; break; }   // 只计数
                 }
 
+                if (p.Skip) continue;      // v1.11.57：已被链式补丁接管的对，不再走 region 法
                 expand.Add(p);
             }
 
@@ -457,6 +466,53 @@ namespace WulinTweaks
                 Plugin.L.LogInfo("[flat] 图 " + graphName + " 展开完成：改线 " + ok + " 条"
                                  + (rolled ? "（已回滚）" : "")
                                  + "，接管门 " + _gateForced.Count + " 个（累计）");
+        }
+
+
+        /// <summary>v1.11.57：链式接续表（与 Android v173 完全一致）。
+        /// 顺序由场景编号推出、离线环检测通过；含义：把「第 i 个角色内容末端」接到「第 i+1 个角色在队门」。</summary>
+        private static readonly Dictionary<string, int[]> _chains = new Dictionary<string, int[]> {
+            { "M5061-5",    new[] { 10008, 10018, 10086, 10088, 10067, 10053 } },
+            { "R10005-5",   new[] { 10061, 10098 } },
+            { "R10049-2-1", new[] { 10061, 10075, 10052, 10098 } },
+            { "R10098-1",   new[] { 10075, 10005 } },
+        };
+
+        /// <summary>把名单里的一张图按 pid 顺序串起来：内容末端 → 下一对在队门。</summary>
+        private static int ApplyChain(string gn, int[] order, List<Pair> pairs,
+                                      Dictionary<IntPtr, OutInfo> outs,
+                                      Dictionary<IntPtr, string> gateCls)
+        {
+            int applied = 0;
+            for (int i = 0; i + 1 < order.Length; i++)
+            {
+                Pair p = null, q = null;
+                foreach (var x in pairs) { if (x.Pid == order[i]) p = x; if (x.Pid == order[i + 1]) q = x; }
+                if (p == null || q == null) continue;
+                OutInfo fo;
+                if (!outs.TryGetValue(p.G0, out fo) || fo.Targets.Count < 1) continue;
+                IntPtr scene = fo.Targets[0];
+                OutInfo so;
+                if (!outs.TryGetValue(scene, out so) || so.Targets.Count < 1) continue;
+                IntPtr src = scene;
+                OutInfo to;
+                if (outs.TryGetValue(so.Targets[0], out to) && to.Targets.Count == 1)
+                {
+                    string nm = null;
+                    try { nm = Il2CppNative.Str(so.Targets[0], "name"); } catch { }
+                    if (nm == "添加标记" || nm == "追加简介") src = so.Targets[0];
+                }
+                OutInfo se;
+                if (!outs.TryGetValue(src, out se) || se.Targets.Count < 1) continue;
+                if (!RedirectEdge(se.Port, se.Targets[0], q.G0)) continue;
+                se.Targets[0] = q.G0;
+                applied++;
+                _gateForced.Add(p.G0); _gateForced.Add(q.G0);
+                p.Skip = true; q.Skip = true;
+                Plugin.L.LogInfo("[flat] 图 " + gn + " 链式接续：pid " + p.Pid + " → " + q.Pid);
+            }
+            if (applied > 0) Plugin.L.LogInfo("[flat] 图 " + gn + " 链式接续完成：改线 " + applied + " 条");
+            return applied;
         }
 
         private static int CountB(List<Pair> ps)
