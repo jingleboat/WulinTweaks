@@ -319,9 +319,13 @@ namespace WulinTweaks
             // 而这一帧正是开场（Role1-1 → Role1-2 → Role1-3 连播）。被阻断 → 剧情停在那一步。
             //
             // v1.11.70：256 → 4096。依据：ContinueArrange 栈帧约 0xd0 字节
-            // （手机端 CA_MAX_DEPTH 的注释里算过），4096 层仅占约 1 MB，
-            // 对 8 MB 线程栈仍留 8 倍余量。真正的死循环远不止 4096 层，照样拦得住。
-            private const int MaxDepth = 4096;
+            // v1.11.72：**绝对不要再往上抬。**
+            // v1.11.70 曾按「0xd0 字节 × 4096 层 ≈ 1 MB」把它提到 4096，结果**用消耗品直接闪退**：
+            // 手机 tombstone 显示 hook_continue_arrange ↔ libil2cpp.so 交替 500+ 层后栈溢出。
+            // 那个换算错得离谱 —— 每层除 ContinueArrange 自己，还夹着 il2cpp 的
+            // CheckCondition / OnActive / OnResult 等中间帧，真实占用是 0xd0 的几十倍，
+            // 8 MB 栈只够 500 层左右。256 是安全值，也是 v137（用户验证正常那版）的值。
+            private const int MaxDepth = 256;
 
             private static int _depth;
             private static int _frame = -1;
