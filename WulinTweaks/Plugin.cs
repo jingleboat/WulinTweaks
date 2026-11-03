@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.57";  // 1.11.57 链式接续表（与手机 v173 一致）
+        public const string Version = "1.11.58";  // 1.11.58 链式表扩到 7 张图
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
