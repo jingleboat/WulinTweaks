@@ -14,3 +14,7 @@ local.props
 
 __pycache__/
 *.pyc
+
+# 审计脚本的临时产物（可重建）
+tools/_*.pkl
+tools/_audit_*.json

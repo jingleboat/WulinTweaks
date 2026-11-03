@@ -103,20 +103,28 @@ python tools/simulate_flatten.py --only R10049-2 --detail   # 单图：逐条列
 「忽略队伍角色条件」要的效果就是**人不在队也照演** —— 这是要保留的功能。
 但有一类图不能这么干：**收尾会写人物数据**的结缘图。
 
-| 结缘图（12 张，全在 `月老祠` map 5016）里的节点 | 写的是什么 | 人不在队/实例不唯一时 |
+| 结缘图（12 张，全在 `月老祠` map 5016）里的节点 | 写的是什么 | 人不在队时会怎样（反汇编核对，见下） |
 |---|---|---|
 | `结缘界面 partnerID` | 读 `UIBonds.Show(npcID)` 的立绘/名字 | 取不到实例 → 界面打开时空引用 |
-| `激活NPC情缘` | `GameCharacterInstance.bonds`（`SetBond(other, type, alsoSetOther:true)` **双向写**） | 对端解析失败 → 单向情缘或抛异常 |
-| `获得武功或绝学 npcID=20025 kungfuID=300001` | 她的 `kungfuInstances`（「望穿秋水」，`isUnique=false`） | 可重复叠加 |
-| `增减buff/debuff partnerID` | 她的 `buffLib`（8901/8501） | 挂到临时实例上，读档就丢 |
-| `改变NPC关系值` | 她的 `relationShip` | 写到另一份实例 → 关系值分裂 |
+| `激活NPC情缘`（`ChangeNpcAffectionNode`） | `GameCharacterInstance.bonds`（`SetBond` **双向写**） | 实例缺失会**补建永久实例**再写；但**每放宽一次就再配一次**，是语义问题不是空引用 |
+| `获得武功或绝学`（`ChangeKungfuNode`） | 她的 `kungfuInstances`（「望穿秋水」，`isUnique=false`） | 实例缺失 → **静默 no-op**；实例在 → 可重复叠加 |
+| `增减buff/debuff`（`ChangeBuffNode`） | 她的 `buffLib`（8901/8501） | 实例缺失 → 静默 no-op |
+| `改变NPC关系值`（`ChangeNpcRelationNode`） | 她的 `relationShip` | 实例缺失会**补建永久实例**再写 → 不会"写到另一份实例" |
 
-而实例解析本身就有"多实例"的余地：`GameCharacterManager.GetCharacterByTempleteId` 返回的是
-**HashSet**，`GetOrCreateCharacter(uid, isPernament:false)` 缺实例时会**新建临时实例**，
-`SaveObjectGameCharacter.createdCharacter` 是按 **instanceId** 索引的——同一个 uid 存在两份实例
-在引擎里是合法状态，写错不报错，只是从此读写分裂；再叠加
-`R{id}-` 图在 `HoldOnceGuard` 里属于免压制例外，条件恒真时会反复触发，
-每触发一次就是 `月老赐福 += 1`（`ChangeTagNumNode.mode: 0=增减`）、再叠一份功法。
+**2026-11-04 反汇编更正**：早期这里写的是「写到临时实例上 / 读档就丢 / 关系值分裂」——那是按
+`GetOrCreateCharacter(uid, isPernament:false)` 的默认实参推测出来的，**已证伪**。节点实际传的是
+`isPernament: true`（`ChangeNpcRelationNode` @`0x269AC20` 前 `mov w2,#1`），补建的是**永久**实例；
+`获得武功/绝学`、`NPC背包物品` 这类则用 `GetCharacter`（取不建），实例缺失时整条动作直接 `return`。
+也就是说：**没有"写进临时实例"这条路径**，真实代价是"静默丢失"或"补建实例"，不是数据分裂。
+
+> 但**结缘图仍然必须不放宽** —— 理由从"写坏数据"变成"**语义重复**"：`激活NPC情缘` 会再配一次、
+> `获得武功或绝学` 会再叠一份（`isUnique=false`），再叠加 `R{id}-` 图免压制、条件恒真反复触发，
+> 每触发一次就是 `月老赐福 += 1`（`ChangeTagNumNode.mode: 0=增减`）、再叠一份功法。
+
+`GameCharacterManager.GetCharacterByTempleteId` 返回的是 **HashSet**，
+`GetOrCreateCharacter(uid, isPernament:false)` 确实会新建临时实例，
+`SaveObjectGameCharacter.createdCharacter` 按 **instanceId** 索引——同一 uid 两份实例在引擎里合法。
+这个"多实例余地"是真的，只是被审计的写类节点没走到那条路上去。
 
 **规则（1.11.26 起）**：
 
@@ -594,7 +602,48 @@ GameCharacterInstance（运行时角色实例）
 | `mkmap.py` | 从 Il2CppDumper 的 `dump.cs` 生成 RVA → `Namespace.Type::Method` 映射 |
 | `x64dis.py` | 按 RVA 反汇编 `GameAssembly.dll`（带符号注释） |
 | `offscan.py` | 扫 PE 里 `[reg+disp32]` 访问某个结构体偏移的指令，定位读该字段的函数 |
+| `audit_node_instances.py` | **（2026-11-04）** 反汇编 54 个 `*OnResultAction`，逐个判定「按 id 分支」用哪个取实例 API（`GetCharacter` / `GetOrCreateCharacter` + `isPernament` 实参）→ 得出「实例缺失时是静默 no-op 还是补建实例」 |
+| `audit_flatten_side.py` | 全量剧情图 → 哪些门对会被展平、`region` 里出现哪些节点名；统计展平实际会播出多少写操作 |
+| `audit_region_writes.py` | 在队侧 `region` 里写操作节点的 `mode` 分布（按 id / 按队位 / 全队），用来确认有没有「Index 指到别人」的风险 |
+| `map_node_names.py` | 编辑器中文默认名 → 运行时类名（按序列化字段签名 + IDF 打分，输出命中字段与次优候选，可 `--detail` 核对） |
 | `autodeploy.ps1` | 等游戏退出后把 `bin\Release\WulinTweaks.dll` 拷到插件目录 |
+
+> 后四个需要 `wulin-apk/dumpout-intl/dump.cs` 与 `libil2cpp_intl.so`（安卓 intl 版 IL2CPP dump）。
+> **它们的反汇编是安卓版的**，PC 的 `Assembly-CSharp.dll` 没在本机核对过（两边字段布局有差异，
+> 例如 `ChangePartnerNode.partnerID` PC 是 `0x48`、手机是 `0x70`）。
+
+---
+
+## 放宽 / 展平的作用面（2026-11-04 离线审计）
+
+问题：放宽和展平都会让「某人是否在队」的在队侧内容在**人不在队**时播出来。那些按人物 id 操作的节点会怎样？
+
+**54 个 `*OnResultAction` 反汇编后只有三种**（脚本：`audit_node_instances.py`）：
+
+| 档 | 取实例方式 | 实例缺失时 |
+|---|---|---|
+| A（13 个） | `GetCharacter(pid)` 取不建 | **整条动作静默 no-op**（武功/背包/钱/势力/经验/HP/buff/属性/形象/`伙伴邀请或离队`）。不写脏数据、不崩、不卡 |
+| B（4 个） | `GetOrCreateCharacter(pid, isPernament:**true**)` | 补建**永久**实例再写（关系值 / 好感·激活情缘 / 强制死亡 / 修改位置）→ 与原版等价 |
+| C（34 个） | 不碰具体人物 | 玩家侧 / 势力侧 / 地图侧 / 标记侧 |
+
+**展平实际会播出多少**（脚本：`audit_flatten_side.py`）：全量 1804 张图里，692 张有门对、共 1652 个门对，
+其中**会被改线的 902 个**（覆盖 1978 个节点、79 张图）；`region` 空或过大 501 个、无对外出口 249 个。
+这 1978 个节点里：改变NPC关系值 119、**伙伴邀请或离队 115（全部 `state=1`=离队）**、增减buff 26、
+改变角色属性 11、强制NPC死亡 8 …；**激活NPC情缘 / 获得武功或绝学 = 0**（全在 12 张结缘图，都落在 region=0 那批里）。
+
+**`mode` 分布**（脚本：`audit_region_writes.py`）：这些写操作**100% 走 `mode=0`（按 id）**，
+没有一个走「按队位」。所以「Index 指到别人、写到错的人」这种原版风险，在 mod 里不存在。
+
+**两条结论**：
+
+1. `Patch_ChangePartner`（离队容错）**只受「放宽」开关控制**，而两个开关默认值相反
+   （放宽 `false` / 展平 `true`）—— **默认配置下展平在跑、这道兜底关着**。展平路径下离队动作会彻底
+   no-op（`GetCharacter` → null → `return`），但不会卡死：展平自身会把两道门都强制判真，流程必然继续。
+2. 原版 `AddCharacter` / `RemoveCharacter` 的**返回值都被丢弃**，所以"队伍已满加不进""人不在队踢不掉"
+   都不会报错，只是静默失败 —— 不是"游戏做了满员判断"，是"根本不看结果"。
+
+> 完整数据（含 `RevertNpcObj` 反汇编、存档现场对比、`OutPort` 归因）在
+> `wulin-apk/docs/当前工作与待解问题.md` 第十三节。
 
 ---
 
