@@ -70,10 +70,14 @@ namespace WulinTweaks
             "注释",
         };
 
-        /// <summary>StoryScenarioNode 的名字是空/场景键，单独判定（见 IsSafeSkipNode）。</summary>
+        /// <summary>
+        /// 是不是 StoryScenarioNode（「播放剧情」）。
+        /// ⚠️ 读字段抛异常时必须返回 **false**：返回 true 等于"当成剧情节点 → 允许跳过"，
+        /// 而异常恰恰说明我们对这个节点一无所知，只能按不安全处理。
+        /// </summary>
         private static bool IsStoryNode(IntPtr node)
         {
-            try { return Il2CppNative.Str(node, "ScenarioKey") != null; } catch { return true; }
+            try { return Il2CppNative.Str(node, "ScenarioKey") != null; } catch { return false; }
         }
 
         /// <summary>这个节点被"跳过"是否安全（纯流程分支 / 播放入口 / 注释）。</summary>
