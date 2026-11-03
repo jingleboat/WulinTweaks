@@ -163,18 +163,10 @@ namespace WulinTweaks
             if (!relax) return false;
             RelaxedThisEval = true;
 
-            // 放宽：走基类实现（与手机端 base_check_all 一致）
-            try
-            {
-                MarkRelaxed(self);
-                var baseFn = Marshal.GetDelegateForFunctionPointer<CheckAllFn>(_baseCheck);
-                return baseFn(self, io, line);
-            }
-            catch (Exception e)
-            {
-                ModKit.Err("dobby base call", e);
-                return true;
-            }
+            // v1.11.61：**只覆盖本条件节点的返回值**，不再调基类。
+            // 调基类会把整条条件链一起放行（实测：挂「大地图区域」的门也被放行 → 剧情连播多遍）。
+            try { MarkRelaxed(self); } catch { }
+            return true;
         }
 
         /// <summary>

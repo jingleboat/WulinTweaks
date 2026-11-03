@@ -139,6 +139,15 @@ namespace WulinTweaks
                 // 同样按原版判定（不放宽）。粒度可以只压某一个场景，而不是整张图。
                 if (Plugin.IsSceneBlacklisted(StoryScene.LastOf(gn))) return false;
 
+                // v1.11.61：**固定名单前置**。之前 IsFixedName 定义了却从未被调用，
+                // 导致 Guide10099-*（燕歌行师父线）在“非角色剧情图”分支被直接放宽 ——
+                // 实测后果：燕歌行从未入队，剧情照样触发。
+                if (IsFixedName(gn)) return false;
+
+                // v1.11.61：只有「属于某个门对」的条件才允许放宽（与手机 v178 对齐）。
+                // 否则门链里夹着的队友条件会把整道门放行 → 同一段剧情被反复拉起。
+                if (!BranchFlatten.RelaxAllowed(gn, condNode)) return false;
+
                 if (pid <= 0) return RelaxOnceCond(gn, condNode);
 
                 var m = _rId.Match(gn);

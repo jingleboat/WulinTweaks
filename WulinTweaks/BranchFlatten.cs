@@ -211,6 +211,7 @@ namespace WulinTweaks
             int n = Il2CppNative.ListCount(list);
             if (n <= 2 || n > MaxNodes)
             {
+                _processed.Add(graphName);
                 _done.Add(graph);
                 Plugin.L.LogWarning("[flat] 图 " + graphName + " 节点数异常（" + n + "），跳过");
                 return;
@@ -324,7 +325,17 @@ namespace WulinTweaks
                 Plugin.L.LogInfo("[flat] 图 " + graphName + " 按门对名单跳过 " + pairSkipped
                                  + " 对（partnerID 命中，其余照常展开）");
             }
-            if (pairs.Count == 0) { _done.Add(graph); return; }
+            if (pairs.Count == 0)
+            {
+                // v1.11.61：图里没有门对 → 允许放宽“门直接挂着的队友条件”（与手机 v178 一致）
+                foreach (var kv in condOf)
+                {
+                    try { if (IsInTeamCond(kv.Value)) RelaxOkAdd(graphName, kv.Value); } catch { }
+                }
+                _processed.Add(graphName);
+                _processed.Add(graphName);
+                _done.Add(graph); return;
+            }
 
             // ---------- ③ 每对算独占内容 region 与对外出口 ----------
             foreach (var p in pairs)
@@ -456,6 +467,8 @@ namespace WulinTweaks
                     // v1.11.52：强制表登记的是 First/Second，日志查询的也是它们
                     _gateInfo[p.First] = new KeyValuePair<int, bool>(p.Pid, p.First == p.G0);
                     _gateInfo[p.Second] = new KeyValuePair<int, bool>(p.Pid, p.Second == p.G0);
+                    RelaxOkAdd(graphName, condOf[p.First]);
+                    RelaxOkAdd(graphName, condOf[p.Second]);
                     try { RelaxName.MarkRelaxed(p.Pid, graphName); } catch { }
 
                     if (_logPair++ < 300)
@@ -581,6 +594,33 @@ namespace WulinTweaks
         // v1.11.54：非白名单门也记一份 (pid, 侧别)，按**字段名**读（各子类偏移不同）
         private static readonly Dictionary<IntPtr, KeyValuePair<int, bool>> _gatePidAll =
             new Dictionary<IntPtr, KeyValuePair<int, bool>>();
+
+        // v1.11.61：只有属于门对的条件才允许放宽（与手机 v178 对齐）
+        private static readonly Dictionary<string, HashSet<IntPtr>> _relaxOk =
+            new Dictionary<string, HashSet<IntPtr>>(StringComparer.OrdinalIgnoreCase);
+        private static readonly HashSet<string> _processed =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        internal static bool RelaxAllowed(string gn, IntPtr cond)
+        {
+            if (string.IsNullOrEmpty(gn)) return true;
+            HashSet<IntPtr> set;
+            if (!_processed.Contains(gn)) return true;      // 还没处理过这张图 → 不阻断（兼容）
+            if (_relaxOk.TryGetValue(gn, out set)) return set.Contains(cond);
+            return false;
+        }
+
+        private static void RelaxOkAdd(string gn, IntPtr cond)
+        {
+            if (cond == IntPtr.Zero || string.IsNullOrEmpty(gn)) return;
+            HashSet<IntPtr> set;
+            if (!_relaxOk.TryGetValue(gn, out set))
+            {
+                set = new HashSet<IntPtr>();
+                _relaxOk[gn] = set;
+            }
+            set.Add(cond);
+        }
 
         internal static string GateCls(IntPtr gate)
         {
