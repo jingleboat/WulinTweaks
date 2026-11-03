@@ -115,6 +115,10 @@ namespace WulinTweaks
         /// <summary>v1.11.55：本次门判定里是否发生过"放宽"（供 [gate] 源标记）。</summary>
         internal static bool RelaxedThisEval;
 
+        /// <summary>v1.11.60：本道门已通过过（times != 0）→ 本次一律不放宽。
+        /// 取代被删除的 HoldOnceGuard（那个是事后压制，会污染 times）。</summary>
+        internal static bool NoRelaxThisEval;
+
         private static bool Dispatch(IntPtr self, int io, IntPtr line, CheckAllFn orig, bool isJoined)
         {
             TeamCondHits++;
@@ -144,6 +148,8 @@ namespace WulinTweaks
             try { r0 = orig != null ? orig(self, io, line) : true; }
             catch { r0 = true; }
             if (r0) return true;
+
+            if (NoRelaxThisEval) return orig != null ? orig(self, io, line) : true;   // v1.11.60
 
             bool relax;
             try { relax = TeamRule.ShouldRelax(self); }

@@ -435,8 +435,8 @@ namespace WulinTweaks
                 {
                     if (!Plugin.IgnoreTeamCondition.Value) return;
                     if (!__result) return;
-                    // v1.11.55（S1）：展平接管的门不进入守卫
-                    if (BranchFlatten.IsGateForced(__instance.Pointer)) return;
+                    // v1.11.60：守卫已删除（用户指定），本函数不再生效
+                    return;
                     // v1.11.56（用户要求）：判据从「队友条件被求值过」改成「本次确实发生过放宽」
                     if (!NativeTeamHook.RelaxedThisEval) return;
                     if (__instance.checkSucessTimes == 0) return;          // 还没成功过：正常放行

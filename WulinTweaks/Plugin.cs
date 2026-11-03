@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.59";  // 1.11.59 仅强制放行模式（M2155-6 / Role5-15-2）
+        public const string Version = "1.11.60";  // 1.11.60 删除守卫 + 门已通过则不放宽 + 额度按条件节点
 
         internal static ManualLogSource L;
         internal static Plugin Inst;

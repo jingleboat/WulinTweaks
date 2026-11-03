@@ -90,6 +90,26 @@ namespace WulinTweaks
     ///
     /// 语义与手机端一致：这个门上的「需要伙伴」条件不再参与判定。
     /// </summary>
+    /// <summary>v1.11.60：在门判定之前记录"这道门是否通过过"，供条件层决定要不要放宽。</summary>
+    [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
+    internal static class Patch_GateTimesPrefix
+    {
+        private static void Prefix(HoldNode __instance, out bool __state)
+        {
+            __state = false;
+            try
+            {
+                int t = 0; try { t = __instance.checkSucessTimes; } catch { }
+                NativeTeamHook.NoRelaxThisEval = t != 0;
+            }
+            catch { }
+        }
+        private static void Postfix(bool __state)
+        {
+            NativeTeamHook.NoRelaxThisEval = false;
+        }
+    }
+
     [HarmonyPatch(typeof(HoldNode), "CheckCondition")]
     internal static class Patch_FlattenGate
     {
