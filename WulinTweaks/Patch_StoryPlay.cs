@@ -125,6 +125,15 @@ namespace WulinTweaks
                 if (__instance == null || !BranchFlatten.IsGateForced(__instance.Pointer)) return true;
                 int t = 0; try { t = __instance.checkSucessTimes; } catch { }
                 __result = true;
+                // v1.11.62：强制放行的门 → 顺带清掉该角色的 '@' 陌生名。
+                // 之前只靠 Unstranger.OnPlay（按 RelaxName 槽位清），而链式接管的门**没有走放宽**、
+                // 槽位里没有这些 uid → 李乐雅/顾倾城一直显示陌生名（实测）。
+                try
+                {
+                    bool it2; int pidc = BranchFlatten.GatePid(__instance.Pointer, out it2);
+                    if (pidc > 0) Unstranger.Apply(pidc);
+                }
+                catch { }
                 GateTrace.Log(__instance, true, "FLATTENED", t, t);
                 return false;          // 跳过原版
             }
@@ -146,6 +155,16 @@ namespace WulinTweaks
                 string src = Hooks.HoldOnceGuard.SuppressedThisEval ? "GUARDED"
                            : (__result && NativeTeamHook.RelaxedThisEval ? "RELAXED"
                            : (__result ? "VANILLA" : "VANILLA_FAIL"));
+                // v1.11.62：播放期间任何与角色相关的门通过 → 清该角色陌生名（与手机 v166 一致）
+                if (__result)
+                {
+                    try
+                    {
+                        bool it2; int pidc = BranchFlatten.GatePid(__instance.Pointer, out it2);
+                        if (pidc > 0 && !string.IsNullOrEmpty(RelaxName.PlayingGraph)) Unstranger.Apply(pidc);
+                    }
+                    catch { }
+                }
                 GateTrace.Log(__instance, __result, src, t, t);
             }
             catch { }
