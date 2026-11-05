@@ -100,9 +100,11 @@ namespace WulinTweaks
                     ModKit.ForceIgnoreTeamCondition();
                     ModKit.ForceHighlightNow();
                     ModKit.UnlockWorldMapTick();
-                    // v1.10.4：换图/读档后把姓名窗口收干净（剧情里换图的场景，下一节点会重新开）
-                    RelaxName.EndNow();
-                    // v1.11.34：实例指针可能整批失效，陌生名缓存清掉重新判定
+                    // v1.11.34：换图/读档后实例指针可能整批失效 —— 丢掉「放宽过谁」的槽位，
+                    // 陌生名缓存也清掉重新判定。
+                    // （原来的 RelaxName.EndNow 是给"临时改名收尾还原"用的；那套已在 1.11.40
+                    //  停用并整体删除，现在这里只剩丢弃槽位这一件事。）
+                    RelaxName.DropAll();
                     Unstranger.Reset();
                     // v1.11.28：家园「可入」白名单（CTMED 是运行时配置，重启即失效，只能每次补）
                     FiefAuto.Tick();
@@ -424,7 +426,11 @@ namespace WulinTweaks
         {
             private static int _warned;
 
-            static void Prefix(out int __state) { __state = NativeTeamHook.TeamCondHits; }
+            static void Prefix(out int __state)
+            {
+                __state = NativeTeamHook.TeamCondHits;
+                NativeTeamHook.RelaxHits = 0;      // v1.11.42+rn6：本次判定重新计数
+            }
 
             static void Postfix(HoldNode __instance, ref bool __result, int __state)
             {
@@ -433,6 +439,13 @@ namespace WulinTweaks
                     if (!Plugin.IgnoreTeamCondition.Value) return;
                     if (!__result) return;
                     if (NativeTeamHook.TeamCondHits == __state) return;    // 本次没检查队友条件 → 不干预
+
+                    /* v1.11.42+rn6：**必须本次真的放宽过**才允许压制。
+                     * 原版本来就为真（角色真在队 / 条件本就满足）时 TeamCondHits 一样会涨，
+                     * 只判它会把正常通过也压掉 —— 手机 v211 修的就是这个（R10049-2 的四段游览
+                     * 第二段起全被压、任务卡死）。这里补同一条判据。 */
+                    if (NativeTeamHook.RelaxHits == 0) return;
+
                     if (__instance.checkSucessTimes == 0) return;          // 还没成功过：正常放行
 
                     string gn;

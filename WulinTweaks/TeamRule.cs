@@ -67,6 +67,9 @@ namespace WulinTweaks
 
         private static int _logRelaxOnce;
 
+        /// <summary>v1.11.42+rn7：门对限制解除后，统计「不属门对但仍放宽」的次数（只用于日志）。</summary>
+        private static int _logOutsidePair;
+
                 /// <summary>放宽带外的「固定图」：改用正则 —— ^Guide10099-（整族师父线）+ ^Fame-2$（仅这一张）。
         /// 烈酒与故事(R10112-2) 已移除；伙伴的故事(R20004-6) 按用户要求保留，交给「每图只放宽一次」兜底。</summary>
         private static readonly System.Text.RegularExpressions.Regex _fixedRe =
@@ -131,6 +134,42 @@ namespace WulinTweaks
                 // v1.11.32：场景级固定名单 —— 这张图「最近播的那个 ScenarioKey」命中名单时，
                 // 同样按原版判定（不放宽）。粒度可以只压某一个场景，而不是整张图。
                 if (Plugin.IsSceneBlacklisted(StoryScene.LastOf(gn))) return false;
+
+                /* v1.11.61 移植（一）：**让固定名单真正生效**。
+                 *
+                 * `IsFixedName` 在 1.11.42 里定义了却从来没有被调用过，于是 `k_fixed_original`
+                 * 那份名单（Guide10099-* 师父线 / Fame-2 / 点名的几张）完全没作用。
+                 * Guide10099-* 的图名不是 `R{uid}-` 形式，落到下面「非角色剧情图」分支被**直接放宽**。
+                 * 实测后果：燕歌行(10099)从未入队，师父线剧情照样触发。 */
+                if (IsFixedName(gn)) return false;
+
+                /* 【门对限制已解除 —— v1.11.42+rn7，按用户决定】
+                 *
+                 * 原 v1.11.61 移植的写法是 `if (!RelaxAllowed(...)) return false;`，
+                 * 只有「属于互补门对」的条件才放宽。现在放开：孤立条件也放宽，
+                 * 让剧情更丰富（手机端从来没有这个限制，也未发现问题）。
+                 *
+                 * 依据（2026-11-04 审阅）：
+                 *   · 重复播放 → times 压制兜住（rn6 已补「本次真放宽过」判据）
+                 *   · 顺序错乱 → 孤立条件没有 Negate 互补的另一半，放宽它只会让那一条路
+                 *     变成"总通"，不存在"该走 A 却走了 B"（B 根本不存在）
+                 *   · 卡死/空指针 → 执行节点有框架级判空：
+                 *     ChangePropertyNode / ChangeNpcRelationNode / ForceNpcDeadNode 的
+                 *     OnResult 反汇编结构逐字节相同（取目标 → cbz 判空 → null 直接 ret）。
+                 *     未验证的只剩 6 类低频节点（战斗/背包/武功/气血，合计约 850 处）。
+                 *
+                 * 保留 RelaxAllowed 的调用**只用于记录**：被解除限制放行的那批条件会写进日志，
+                 * 以后真出问题能直接定位到「哪个图、哪个 pid 是靠放宽孤立条件进去的」。 */
+                try
+                {
+                    if (!BranchFlatten.RelaxAllowed(gn, condNode))
+                    {
+                        if (_logOutsidePair++ < 60)
+                            Plugin.L.LogInfo("[relax] 图 " + gn + " pid=" + pid
+                                + " 不属门对 → 仍放宽（门对限制已解除，仅记录）");
+                    }
+                }
+                catch { }
 
                 if (pid <= 0) return RelaxOnce(gn);
 

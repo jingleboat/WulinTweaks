@@ -12,7 +12,7 @@ namespace WulinTweaks
     public class Plugin : BasePlugin
     {
         public const string Guid = "wulin.tweaks";
-        public const string Version = "1.11.39";  // 1.11.39 删除显示层回落（三层 getter 补丁）与 RealFullName 拆分；只清 givenName 的 @
+        public const string Version = "1.11.42+rn7"; // 基准1.11.42 + 真名(仅Unstranger) + 固定名单 + 门对限制已解除(仅记日志) + joined不放宽 + times压制真放宽判据
 
         internal static ManualLogSource L;
         internal static Plugin Inst;
@@ -176,20 +176,18 @@ FlattenBlacklist = Config.Bind("3_Story", "FlattenBlacklist", "",
             // v1.11.39（用户指定）：**删除显示层的回落机制** —— 原来三层 getter 兜底
             // （get_FullName / get_FullNameWithTitle / get_IsUsingStangerName）不再注册。
             // 理由：游戏自己的取名已经是「实例 → 模板」的正确实现，我们额外接管只会引入
-            // 「只显示姓」「称号·姓名 拼重复」这类错误。现在只在数据层动手（Unstranger 清 @，
-            // RelaxName 临时写模板真名），显示完全交回游戏。
-            // 三个补丁类仍保留在 Patch_RealName.cs 里（未注册 = 不生效），需要时可一键恢复。
+            // 「只显示姓」「称号·姓名 拼重复」这类错误。现在只在数据层动手（Unstranger 清 @），
+            // 显示完全交回游戏。
 
-            // ⑨ 剧情播放起止（v1.9.9：名字切换只在播放期间、且只作用于当前图）
+            // ⑨ 剧情播放开始：开播时按本图名单强制补一次「陌生名 → 真名」
             SafePatch(typeof(Patch_StoryPlayBegin), "StoryScenarioNode.OnActive(播放开始)");
-            SafePatch(typeof(Patch_StoryPlayEnd), "StoryScenarioNode.Continue(播放结束)");
 
             // ⑩ 剧情分支展开：被接管的门无条件判真（v1.10.0）
                         SafePatch(typeof(Patch_FlattenGate), "HoldNode.CheckCondition(分支展开的门)");
 
-            // ⑪ 剧情收尾：StoryCloseNode 执行结果时还原姓名（v1.10.4 的事件驱动窗口终点）
-            SafePatch(typeof(Patch_StoryClose), "StoryCloseNode.OnResult(剧情收尾)");
-            // v1.11.37：读档完成 → 重置「每图只放宽一次」与姓名缓存
+            // ⑪ 读档完成 → 重置「每图只放宽一次」、丢弃放宽槽位、清陌生名缓存
+            // （原来的 Patch_StoryPlayEnd / Patch_StoryClose 已删除：它们只服务"临时改名 → 收尾还原"，
+            //   而那套在 1.11.40 停用后就是空调用。）
             SafePatch(typeof(Patch_LoadFinished), "GameCharacterManager.OnLoadFinished(读档完成)");
 
             // ⑫ 控制台指令 `join <人物ID|人物名> [1]`（静默：不写任何界面文字）

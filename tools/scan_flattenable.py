@@ -33,6 +33,35 @@ import zipfile
 DEFAULT_ZIP = r"D:\steamgame\steamapps\common\WulinSH\Wulin_Data\StreamingAssets\ModEditor\ModEditor.zip"
 STORY_PREFIX = "Assets/GameRes/Story/"
 
+# 哪些节点名才是「队友条件」（mod 的放宽/展平作用对象）。
+#
+# 认定依据：
+#   「需要伙伴」 = HavePartnerCondition     （当前在队）
+#   「需要角色加入」/「是否加入过队伍」 = IsJoinedTeamCondition（历史入队）
+# 后者在 ModEditor 里没直接观察到（该图集里出现次数为 0），先留名备用；
+# 只有这两个类会被原生 hook（CheckAllConnectNode）接管，其余带 partnerID 的节点
+# 都是效果节点或触发器，不能进 cond 表。
+# v272：**只认「需要伙伴」**（HavePartnerCondition）。
+#
+# 实现目标是「角色是否在队」这一个语义，只有它符合。
+# 「需要角色加入 / 是否加入过队伍 / 需要角色加入过队伍」= IsJoinedTeamCondition（**历史入队**），
+# 与「当前在队」不是同一维度；且运行时 v212 已决定它**不放宽**，
+# 所以对它展平不会生效（展平依赖放宽让 G0 判真），只会白登记门表/条件表。
+#
+# 早期这里是 4 个名字，注释写着「后者在 ModEditor 里没直接观察到，先留名备用」——
+# 运行时照抄了这个「备用」白名单 → 隐患：DLC 图里若出现「是否加入过队伍」，
+# 会被误当成「在队/不在队」门对，按 Negate 互补去展平，语义完全错。
+#
+# 离线全库实测（伙伴/入队类条件的类名分布）：
+#   需要伙伴            1546
+#   队伍有空闲位置        402   （不在白名单，正确）
+#   判断队伍属性满足      196   （不在白名单，正确）
+#   判断NPC加入过队伍       7   （不在白名单，正确）
+#   需要角色加入 / 是否加入过队伍 / 需要角色加入过队伍  → **0 次**
+TEAM_COND_NAMES = {
+    "需要伙伴",
+}
+
 
 # ---------------------------------------------------------------- YAML 小工具
 def split_docs(raw):
@@ -131,13 +160,25 @@ class StoryGraph(object):
                 self.scen[yaml_unquote(sk)] = fid
             pid = top_field(body, "partnerID")
             if pid is not None:
+                nm = yaml_unquote(top_field(body, "m_Name"))
+                # 只有「需要伙伴」（HavePartnerCondition）才是队友条件。
+                #
+                # ⚠️ 2026-11-04 修正：`partnerID` 字段**不是**队友条件专属。
+                # 实测 ModEditor 里带该字段的节点类型（按出现次数）：
+                #   指定NPC死亡 3136 / 需要伙伴 2129 / 当与Npc交互 2013 / 改变角色属性 1960
+                #   改变NPC关系值 1710 / 增减buff 1536 / 需要角色属于帮派 1223 / 需要人物属性 1221 …
+                # 旧代码只看 partnerID 就收进 cond，于是「当与Npc交互」「指定NPC死亡」这些
+                # 全被当成队友条件，门对统计与 region 分析都被污染
+                # （实例：R10049-2-1 的 42161/42162/42163 其实是「当与Npc交互」，不是队友条件）。
+                if nm not in TEAM_COND_NAMES:
+                    continue
                 neg = yaml_unquote(top_field(body, "Negate") or "0")
                 try:
                     pid_i = int(pid)
                 except ValueError:
                     pid_i = None
                 self.cond[fid] = {
-                    "name": yaml_unquote(top_field(body, "m_Name")),
+                    "name": nm,
                     "pid": pid_i,
                     "neg": neg,
                 }

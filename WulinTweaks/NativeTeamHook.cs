@@ -46,6 +46,17 @@ namespace WulinTweaks
         /// </summary>
         [ThreadStatic] internal static int TeamCondHits;
 
+        /// <summary>
+        /// v1.11.42+rn6：本次门判定里「**真的放宽过**几次」（对应手机 v211 的 `g_ev_relax_hits`）。
+        ///
+        /// 为什么要它：`TeamCondHits` 只说明「碰过队友条件」，而原版本来就为真时（角色真在队、
+        /// 或条件本就满足）这个计数一样会涨 —— 于是 `HoldOnceGuard` 会把**正常通过**也当成
+        /// 「放宽引起的重复触发」压回去。手机端 v211 已经因此修过一次（R10049-2 的 4 段游览
+        /// 第二段起全被压，任务卡死）。这里补齐同一条判据：
+        /// 只有这次真的走了放宽分支（`RelaxHits > 0`）才允许压制。
+        /// </summary>
+        [ThreadStatic] internal static int RelaxHits;
+
 
         /// <summary>
         /// v1.9.6：最近一次「放宽放过了谁」+ 窗口截止时间（TickCount64 毫秒）。
@@ -106,8 +117,22 @@ namespace WulinTweaks
             _installed = false;
         }
 
+        /// <summary>
+        /// `IsJoinedTeamCondition`（「**曾经**加入过队伍」）—— 不参与放宽。
+        ///
+        /// 它与 `HavePartnerCondition`（当前在队）语义不同：放宽"曾经加入过"等于允许
+        /// 「从未加入」也能触发该角色的本命事件。所以这里**完全走原版判定**，
+        /// 只保留两件与判定无关的事：TeamCondHits 计数、以及图处理（分支展开的 Try）。
+        ///
+        /// 之前两个 hook 共用 Dispatch，joined 和 partner 被同等对待 —— 这就是
+        /// 「燕歌行从未入队、师父线剧情照样触发」的另一条通路。
+        /// </summary>
         private static bool FakeJoined(IntPtr self, int io, IntPtr line)
-            => Dispatch(self, io, line, _origJoinedFn);
+        {
+            TeamCondHits++;
+            try { BranchFlatten.Try(self); } catch { }
+            return _origJoinedFn != null ? _origJoinedFn(self, io, line) : true;
+        }
 
         private static bool FakePartner(IntPtr self, int io, IntPtr line)
             => Dispatch(self, io, line, _origPartnerFn);
@@ -115,7 +140,8 @@ namespace WulinTweaks
         private static bool Dispatch(IntPtr self, int io, IntPtr line, CheckAllFn orig)
         {
             TeamCondHits++;
-            RelaxName.MaybeSync();   // v1.9.9：探测「剧情播放中」状态翻转
+            // 原来这里有 RelaxName.MaybeSync()（v1.9.9，为"临时改名"探测播放状态）。
+            // 那套在 1.11.40 停用、现已在 RelaxName.cs 里整体删除，故一并去掉。
 
             // v1.10.0：剧情分支展开 —— 顺手在目标图上套补丁（除首次命中，其余只是一次哈希查找）。
             // 门的「无条件判真」不在这里做：PC 版认不出 conditionPort 连着的条件节点
@@ -152,6 +178,7 @@ namespace WulinTweaks
             try
             {
                 MarkRelaxed(self);
+                RelaxHits++;          // v1.11.42+rn6：记「这次真的放宽了」（手机 v211 的 g_ev_relax_hits）
                 var baseFn = Marshal.GetDelegateForFunctionPointer<CheckAllFn>(_baseCheck);
                 return baseFn(self, io, line);
             }

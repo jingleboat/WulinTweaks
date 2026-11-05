@@ -33,11 +33,17 @@ namespace WulinTweaks
                 string graph = null;
                 try { graph = __instance.graph == null ? null : __instance.graph.name; } catch { }
 
-                // v1.11.36：先按本图名单补一次「陌生名 → 真名」，再开播放窗口。
-                // 顺序不能反：PlayBegin 里 Sync 会拍下实例"原值"，先清掉 @ 才不会在收尾时被还原回去。
+                // v1.11.36：剧情开播时按本图名单强制补一次「陌生名 → 真名」（force 绕过缓存）。
+                // 这是「显示真名」的唯一执行路径：把实例的 m_givenName 置空，
+                // get_IsUsingStangerName 随即变 false（它判的就是 m_givenName 是否以 '@' 开头），
+                // 显示层走「熟悉」分支，游戏自己从模板取真名。
                 try { Unstranger.OnPlay(graph); } catch { }
 
-                RelaxName.PlayBegin(graph);
+                /* 原来这里还有一行 RelaxName.PlayBegin(graph) —— 已去掉。
+                 * 它只为 IsLiveInStory 开窗口，而消费它的 Patch_RealName 从未注册（Plugin.cs 里注明
+                 * "未注册 = 不生效"）；Sync 本体在 1.11.40 也 return 掉了（停用临时改名）。
+                 * 也就是这一行早就是死调用，留着只会让人误以为还有一层"改名 + 收尾还原"的机制。
+                 * RelaxName 里的槽位登记（MarkRelaxed / UidsOfGraph）仍然保留 —— OnPlay 靠它拿本图 uid 列表。 */
 
                 // v1.11.32：记录这张图「正在播的场景键」，供「场景级固定名单」判定。
                 // 用 Il2CppNative 按字段名读（不依赖 interop 是否导出 ScenarioKey 属性）。
@@ -70,16 +76,6 @@ namespace WulinTweaks
         }
     }
 
-    [HarmonyPatch(typeof(StoryScenarioNode), "Continue")]
-    internal static class Patch_StoryPlayEnd
-    {
-        private static void Postfix()
-        {
-            try { RelaxName.PlayEnd(); }
-            catch (Exception e) { Plugin.L.LogWarning("[name] PlayEnd 异常: " + e.Message); }
-        }
-    }
-
     /// <summary>
     /// 剧情分支展开：把「已被展开接管」的门无条件判真。
     ///
@@ -97,9 +93,49 @@ namespace WulinTweaks
         {
             try
             {
-                if (__result || __instance == null) return;
-                if (!BranchFlatten.IsGateForced(__instance.Pointer)) return;
-                __result = true;
+                if (__instance == null) return;
+
+                // 原逻辑：判假的门如果被展平接管 → 强制放行
+                bool forced = false;
+                if (!__result && BranchFlatten.IsGateForced(__instance.Pointer))
+                {
+                    __result = true;
+                    forced = true;
+                }
+
+                /* 【「显示真名」—— 门通过时补清，只针对**我们放宽造成的**通过】
+                 *
+                 * 为什么需要：临时实例（GetOrCreateCharacter(uid, isPernament:false)）在剧情用到她
+                 * 的那一刻才被创建，创建时才把 "@清冷的蒙面女子" 写进 m_givenName。而
+                 *   · 放宽判定时实例往往还不存在 → Unstranger.Apply 返回 null 直接跳过；
+                 *   · 剧情开播（OnActive → OnPlay）时也可能还没建 → 同样清不到。
+                 * 门判定通过时实例一定已经存在（剧情正在用它），所以这里再补一次。
+                 *
+                 * 两条判定，都只认「mod 介入」的门：
+                 *   ① forced —— 原版判假、被展平强制放行；
+                 *   ② 原版判真，但这个 (图, pid) 属于我们放宽过的（RelaxName.WasRelaxed）。
+                 * 原版本来就走通、跟我们无关的门，一律不碰。 */
+                int pidc = 0;
+                try { pidc = BranchFlatten.GatePartnerId(__instance.Pointer); } catch { }
+
+                if (pidc > 0)
+                {
+                    bool ours = forced;
+                    if (!ours)
+                    {
+                        try
+                        {
+                            string gn = null;
+                            try { gn = __instance.graph == null ? null : __instance.graph.name; } catch { }
+                            ours = RelaxName.WasRelaxed(gn, pidc);
+                        }
+                        catch { }
+                    }
+                    if (ours)
+                    {
+                        try { Unstranger.Apply(pidc); } catch { }
+                    }
+                }
             }
             catch (Exception e) { ModKit.Err("patch flatten gate", e); }
         }
@@ -131,36 +167,7 @@ namespace WulinTweaks
         }
     }
 
-    /// <summary>
-    /// 剧情事件真正结束的信号 —— 剧情图里那个「结束剧情」节点（StoryCloseNode）执行结果时。
-    ///
-    /// 为什么需要它：`StoryScenarioNode.Continue` 是**每个节点**都会调一次，
-    /// 而节点之间的空档实测能到 1~19 秒（玩家读字、选项、Hold 等待）。
-    /// 靠 Continue + 短宽限判断"剧情播完了"必然在空档里误还原。
-    /// 这个节点只在剧情收尾时出现一次，带着自己的 GraphName，可以精确判断"是我们这张图结束了"。
-    /// </summary>
-    [HarmonyPatch(typeof(StoryCloseNode), "OnResult")]
-    internal static class Patch_StoryClose
-    {
-        private static void Postfix(StoryCloseNode __instance)
-        {
-            try
-            {
-                if (__instance == null) return;
-                string gn = null;
-                try { gn = __instance.GraphName; } catch { }
-
-                string playing = RelaxName.PlayingGraph;
-                if (string.IsNullOrEmpty(playing)) return;
-
-                // 只结束"我们自己这张图"：别的剧情收尾不应影响当前播放中的姓名窗口
-                if (string.IsNullOrEmpty(gn) || !string.Equals(gn, playing, StringComparison.Ordinal))
-                    return;
-
-                Plugin.L.LogInfo("[name] 剧情收尾（StoryCloseNode graph=" + gn + "）→ 还原姓名");
-                RelaxName.EndNow();
-            }
-            catch (Exception e) { ModKit.Err("patch story close", e); }
-        }
-    }
+    /* Patch_StoryClose（StoryCloseNode.OnResult）已删除。
+     * 它原本的职责是"剧情收尾 → 还原被临时改掉的姓名"，而临时改名那套在 1.11.40 就停用了；
+     * 现在显示真名只靠 Unstranger 清空 m_givenName（不需要还原），这个补丁没有任何事可做。 */
 }
