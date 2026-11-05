@@ -488,7 +488,11 @@ namespace WulinTweaks
 
                 IntPtr rewireTo = p.NextG0 != IntPtr.Zero ? p.NextG0 : p.G1;
 
+                // v281（P0-7）：**事务化** —— 任一出口改线失败就回滚本次全部改线，
+                // 并且**不登记门表**（避免「连接只改了一半 + 门被强制放行」这种不一致）。
+                // 审查意见原话：「任意步骤失败都恢复原连接，不留下部分改线或部分门表。」
                 bool allOk = true;
+                var applied = new List<(IntPtr port, IntPtr from, IntPtr to)>();
                 foreach (var e in p.Exits)
                 {
                     IntPtr src = e.Key, oldT = e.Value;
@@ -498,7 +502,21 @@ namespace WulinTweaks
                         allOk = false;
                         fail++;
                     }
-                    else ok++;
+                    else { applied.Add((info.Port, oldT, rewireTo)); ok++; }
+                }
+                if (!allOk)
+                {
+                    for (int i = applied.Count - 1; i >= 0; --i)
+                        RedirectEdge(applied[i].port, applied[i].to, applied[i].from);
+                    ok -= applied.Count;
+                    fail -= 1;                     // 只记「这一对失败」一次
+                    if (_logPair < 300)
+                    {
+                        _logPair++;
+                        Plugin.L.LogWarning("[flat-rollback] pid=" + p.Pid
+                            + " 出口改线失败 → 已回滚 " + applied.Count + " 条，不登记门表");
+                    }
+                    continue;
                 }
 
                 // ---- G1 → G0：只对有下一对的门对生效 ----
@@ -516,11 +534,31 @@ namespace WulinTweaks
                     //
                     // 判据：目标若只有 G1 指着 = 它独占的下级 → 改指就切断 → 保持原样。
                     var targetsCopy = new List<IntPtr>(g1o.Targets);
+                    var g1Applied = new List<(IntPtr port, IntPtr from, IntPtr to)>();
+                    bool g1AllOk = true;
                     foreach (var t in targetsCopy)
                     {
                         if (!HasOtherIn(outs, t, p.G1)) continue;   // 独占下级 → 不改
-                        if (RedirectEdge(g1o.Port, t, p.G0)) g1ToG0++;
+                        if (RedirectEdge(g1o.Port, t, p.G0)) g1Applied.Add((g1o.Port, t, p.G0));
+                        else g1AllOk = false;
                     }
+                    if (!g1AllOk)
+                    {
+                        // v281（P0-7）：G1→G0 失败同样回滚（含本次已做的出口改线）
+                        for (int i = g1Applied.Count - 1; i >= 0; --i)
+                            RedirectEdge(g1Applied[i].port, g1Applied[i].to, g1Applied[i].from);
+                        for (int i = applied.Count - 1; i >= 0; --i)
+                            RedirectEdge(applied[i].port, applied[i].to, applied[i].from);
+                        ok -= applied.Count;
+                        if (_logPair < 300)
+                        {
+                            _logPair++;
+                            Plugin.L.LogWarning("[flat-rollback] pid=" + p.Pid
+                                + " G1→G0 改线失败 → 已回滚本次全部改线，不登记门表");
+                        }
+                        continue;
+                    }
+                    g1ToG0 += g1Applied.Count;
                 }
 
                 _gateForced.Add(p.G0);
