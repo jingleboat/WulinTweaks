@@ -417,6 +417,16 @@ namespace WulinTweaks
                     : FindExits(region, outs, p.G1);
             }
 
+            // v281 诊断：逐对打印 region/出口，定位「空或无出口 N」
+            if (_logPair < 400)
+            {
+                foreach (var q in pairs)
+                    Plugin.L.LogInfo("[flat-3a] pid=" + q.Pid + " reg=" + q.Region.Count
+                                     + " ex=" + q.Exits.Count
+                                     + " g0出边=" + (outs.TryGetValue(q.G0, out var g0o) ? g0o.Targets.Count : -1)
+                                     + " g1出边=" + (outs.TryGetValue(q.G1, out var g1o2) ? g1o2.Targets.Count : -1));
+            }
+
             // ---------- ④ 剔除有问题的对（重叠 / 无出口 / 过大） ----------
             var expand = new List<Pair>();
             int skippedOverlap = 0, skippedExits = 0, skippedEmpty = 0, skippedOrphan = 0;
@@ -666,17 +676,26 @@ namespace WulinTweaks
         private static HashSet<IntPtr> Reach(IntPtr start, Dictionary<IntPtr, OutInfo> outs,
                                              HashSet<IntPtr> avoid = null)
         {
+            // v281 修正：**avoid 必须在「加入 seen 之前」判断**。
+            //
+            // 旧实现在 Pop 时才判 avoid —— 那时节点已经进了 seen（只是不扩展）。
+            // 后果：`r0 - r1` 里会残留 avoid 节点，与手机版 `flat_region` 的
+            // 三态 `out[]` 语义（加入前就跳过）**不一致** → 同一张图 PC 与手机算出不同的 region。
+            //
+            // 手机版 flat_region 的做法（C 代码）：
+            //     for (t in outs(cur)) { if (t == g0) continue; if (out[t]) continue; out[t] = 2; push(t); }
+            // 即「不穿过」= 连目标本身都不记录，而不是「记录了但不扩展」。
             var seen = new HashSet<IntPtr> { start };
             var stack = new Stack<IntPtr>();
             stack.Push(start);
             while (stack.Count > 0)
             {
                 IntPtr cur = stack.Pop();
-                if (avoid != null && cur != start && avoid.Contains(cur)) continue;
                 if (!outs.TryGetValue(cur, out var o)) continue;
                 for (int i = 0; i < o.Targets.Count; i++)
                 {
                     IntPtr t = o.Targets[i];
+                    if (avoid != null && t != start && avoid.Contains(t)) continue;   // 加入前跳过
                     if (seen.Add(t)) stack.Push(t);
                 }
             }
