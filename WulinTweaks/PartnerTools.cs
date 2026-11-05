@@ -34,6 +34,52 @@ namespace WulinTweaks
             catch { return null; }
         }
 
+        /// <summary>
+        /// 给新建实例落位（出厂实例没有地图/坐标）。形状抄 Save0 里 m_curMapId == -1（大地图）的实例：
+        /// m_curMapId / m_targetMapId = -1，m_curPos / m_targetPos = (85,125,0)，m_dir = 1，m_AnimState = -1。
+        /// 四个 setter 已逐条反汇编核对：SetMapId 写 0x180+0x184、SetPos 写 0x188+0x194、
+        /// SetDir 写 0x1B0、SetAnimState 写 0x1B4（手机版同一组偏移）。与游戏自己的
+        /// StoryManager.LoadNpcPos 同形：SetMapId + SetPos + 写朝向。
+        /// </summary>
+        private static void PlaceOnOverworld(GameCharacterInstance inst)
+        {
+            try
+            {
+                inst.SetMapId(-1, true);                                   // alsoChangeTarget
+                inst.SetPos(new UnityEngine.Vector3Int(85, 125, 0), true);
+                inst.SetDir((TileDirection)1);
+                inst.SetAnimState(-1);
+            }
+            catch (Exception e) { Plugin.L.LogWarning("[join] 落位失败: " + e.Message); }
+        }
+
+        /// <summary>
+        /// 取实例，没有就按模板创建（游戏自带能力）。uid 是「模板ID」，不是 InstanceId。
+        /// 参数对齐原版 GameConsole.AddTeamMember 里的调用：forceInstanceId=-1,
+        /// isPernament=true（会进存档）, factionJob=-1, equipCraftLevel=-1。
+        /// 模板表里没有该 id 时 CreateCharacter 返回 null。
+        /// </summary>
+        internal static GameCharacterInstance InstanceOrCreate(int uid, out bool created)
+        {
+            created = false;
+            var inst = Instance(uid);
+            if (inst != null) return inst;
+            try
+            {
+                var m = GameCharacterManager.Instance;
+                if (m == null) return null;
+                inst = m.CreateCharacter(uid, -1, true, -1, -1);
+                created = inst != null;
+                if (created) PlaceOnOverworld(inst);
+                return inst;
+            }
+            catch (Exception e)
+            {
+                Plugin.L.LogWarning("[join] 按模板创建 uid=" + uid + " 异常: " + e.Message);
+                return null;
+            }
+        }
+
         // ---------------------------------------------------------------- ① 解除陌生
         /// <summary>
         /// 存档实证的「已认识」形状：`m_additionProps["初次见面"] = 1` + 双向好感 100 +

@@ -75,8 +75,19 @@ namespace WulinTweaks
                 var inst = PartnerTools.Instance(uid);
                 if (inst == null)
                 {
-                    Plugin.L.LogWarning("[join] uid=" + uid + " 实例不存在（还没被游戏创建）");
-                    return;
+                    // 原版 GameConsole.AddTeamMember 在这条路上会自己 CreateCharacter 兜底，
+                    // 我们这条 join 以前只查实例就停了，所以「还没被游戏创建」的角色永远进不来。
+                    Plugin.L.LogInfo("[join] uid=" + uid + " 实例不存在，按模板创建");
+                    bool created;
+                    inst = PartnerTools.InstanceOrCreate(uid, out created);
+                    if (inst == null)
+                    {
+                        Plugin.L.LogWarning("[join] uid=" + uid + " 模板创建失败：模板表里没有该 id，或该类角色不允许创建");
+                        return;
+                    }
+                    Plugin.L.LogInfo("[join] uid=" + uid + " 已实例化 iid=" + inst.InstanceId
+                                     + " 模板uid=" + inst.TempleteUid + " 存活=" + inst.IsAlive
+                                     + " 位置=" + inst.CurPos + " 朝向=" + inst.Dir);
                 }
 
                 bool revived = PartnerTools.ReviveIfDead(inst);

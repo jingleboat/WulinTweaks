@@ -103,3 +103,48 @@ HavePartnerCondition.CheckAllConnectNode       0x10F2230
 2. **`find_class(ns, name)` 的命名空间不能传错**——传错会静默返回 null
    （`GameCharacterManager` 在 `WuLin` 命名空间下，此处曾出错导致三个版本空转）；
 3. **兜底不要静默**——`never_joined` 拿不到管理器时按「已入队」返回，正好掩盖了上述错误。
+
+---
+
+## 七、控制台 `join`：按模板实例化 + 落位（2026-11-06，261106e/f）
+
+### 背景
+
+`join` 是我们自己实现的指令（`ConsoleJoin.cs`），不是原版控制台按钮。原版 `GameConsole.AddTeamMember(int id)` 的流程是：
+
+```
+GetCharacter(id)                       // 实例字典，按 instanceId 查
+if (null) CreateCharacter(uid: id, forceInstanceId: -1, isPernament: true, factionJob: -1, equipCraftLevel: -1)
+if (still null) return                 // 静默
+PlayerTeamManager.AddCharacter(instance)
+```
+
+**原版自带「查不到就按模板建」的兜底**，我们这条一开始漏了这一步，所以「还没被游戏创建」的角色永远进不来。
+（PC RVA：`AddTeamMember` `0x70C070`、`GetCharacter` `0x704CE0`、`CreateCharacter(int)` `0x7009C0`、`AddCharacter` `0x8824B0`。）
+
+### 实现
+
+- `PartnerTools.InstanceOrCreate(uid, out created)`：先 `GetCharacter`，为空则 `CreateCharacter(uid, -1, true, -1, -1)`。
+  `uid` 是**模板ID**，不是 InstanceId；模板表里没有该 id 时 `CreateCharacter` 返回 null。
+- `PartnerTools.PlaceOnOverworld(inst)`：仅对**刚创建出来的**实例落位。
+
+### 落位字段（PC 与手机偏移一致，由 setter 反汇编逐条确认）
+
+| 偏移 | 字段 | setter |
+|---|---|---|
+| `0x180` | `m_curMapId` | `SetMapId`（`alsoChangeTarget` 时同写 `0x184`） |
+| `0x184` | `m_targetMapId` | 同上 |
+| `0x188 / 0x18C / 0x190` | `m_curPos` x/y/z | `SetPos`（`alsoChangeTarget` 时同写 `0x194..0x19C`） |
+| `0x194 / 0x198 / 0x19C` | `m_targetPos` x/y/z | 同上 |
+| `0x1B0` | `m_dir` | `SetDir` |
+| `0x1B4` | `m_AnimState` | `SetAnimState` |
+
+写入值（抄存档里 `m_curMapId == -1`（大地图）的实例）：
+`SetMapId(-1, true)` → `SetPos((85,125,0), true)` → `SetDir(1)` → `SetAnimState(-1)`。
+游戏自己的 `StoryManager.LoadNpcPos`（`0x4513D0`）就是这个形状：`SetMapId` + `SetPos` + 写 `[inst+0x1B0]=dir`。
+
+### 两个注意点
+
+1. **`m_curPos` 是坐标，朝向是 `m_dir`**（存档里 `m_dir` 取值 0/1/2/3）。
+2. 存档实证：**队内成员的形状是 `m_curMapId=0` + `m_curPos=(0,0,0)`**，`-1` 是「大地图上闲逛的 NPC」。当前按用户要求写 `-1/(85,125)`；若出现「在队但人不在身边」，改成 `0/(0,0,0)` 只要改一行。
+3. 出厂实例这几个字段可能是 `int.MinValue` 哨兵（存档实测），所以落位是必需的，不是可选项。
